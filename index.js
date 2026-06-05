@@ -5,7 +5,6 @@ const app = express();
 app.use(express.json());
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const AISENSY_API_KEY = process.env.AISENSY_API_KEY;
 
 // Almacena el historial de conversaciones por número de teléfono
 const conversaciones = {};
@@ -107,7 +106,7 @@ ATRACCIONES CERCANAS:
 
 RESERVAS Y PAGOS:
 Las reservas se confirman con 50% o 100% de transferencia bancaria. El saldo restante se paga en la finca (POS con tarjeta o efectivo).
-Para confirmar una reserva, transfiere al WhatsApp de reservas: +504 9581-2311
+Para confirmar una reserva, el cliente debe contactar al WhatsApp de reservas: +504 9581-2311
 
 REGLAS IMPORTANTES:
 - Usa "mininevera" en lugar de "minibar"
@@ -119,21 +118,21 @@ REGLAS IMPORTANTES:
 
 // Endpoint de salud
 app.get('/', (req, res) => {
-  res.json({ status: 'Vera está activa 🌿', version: '1.0.0' });
+  res.json({ status: 'Vera está activa 🌿', version: '2.0.0' });
 });
 
-// Webhook que recibe mensajes de AiSensy
+// Webhook que recibe mensajes de Make.com
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
     console.log('Mensaje recibido:', JSON.stringify(body, null, 2));
 
-    // Extraer datos del mensaje entrante de AiSensy
+    // Extraer datos del mensaje entrante de Make.com
     const phone = body.waId || body.phone || body.from;
-    const messageText = body.text?.body || body.message || body.content || '';
+    const messageText = body.message || body.text || '';
 
     if (!phone || !messageText) {
-      return res.status(200).json({ status: 'ignored' });
+      return res.status(200).json({ status: 'ignored', reason: 'no phone or message' });
     }
 
     // Inicializar historial si no existe
@@ -178,35 +177,14 @@ app.post('/webhook', async (req, res) => {
       content: veraResponse
     });
 
-    // Enviar respuesta de vuelta por AiSensy
-    await axios.post(
-      'https://backend.aisensy.com/campaign/t1/api/v2',
-      {
-        apiKey: AISENSY_API_KEY,
-        campaignName: 'vera_respuesta',
-        destination: phone,
-        userName: 'Finca Las Vírgenes',
-        templateParams: [],
-        source: 'vera-webhook',
-        media: {},
-        buttons: [],
-        carouselCards: [],
-        location: {},
-        paramsFallbackValue: {
-          FirstName: 'Cliente'
-        },
-        // Para mensajes de sesión (dentro de 24 horas)
-        message: veraResponse
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    console.log(`Respuesta de Vera a ${phone}: ${veraResponse.substring(0, 100)}...`);
 
-    console.log(`Respuesta enviada a ${phone}: ${veraResponse.substring(0, 100)}...`);
-    res.status(200).json({ status: 'ok', message: 'Respuesta enviada' });
+    // Devolver respuesta a Make.com — Make.com se encarga de enviarla al cliente
+    res.status(200).json({
+      status: 'ok',
+      reply: veraResponse,
+      phone: phone
+    });
 
   } catch (error) {
     console.error('Error en webhook:', error.response?.data || error.message);
