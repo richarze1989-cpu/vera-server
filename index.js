@@ -5,6 +5,8 @@ const app = express();
 app.use(express.json());
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const VERIFY_TOKEN = 'vera2024';
 
 const conversaciones = {};
@@ -39,32 +41,37 @@ TODOS LOS ALOJAMIENTOS INCLUYEN: desayuno, acceso a piscina, jardines y restaura
 POLÍTICA DE RESERVAS:
 - Se requiere 50% o 100% de anticipo para confirmar
 - Check-in: 3:00 PM | Check-out: 11:00 AM
-- Mascotas: máx 2, depósito reembolsable L.1,000
+- Cancellación +7 días: reagendar gratis o reembolso 80%
+- Cancelación 3-7 días: un reagendamiento gratis o reembolso 50%
+- Cancelación menos de 3 días: sin reembolso
+- Mascotas: máx 2, depósito reembolsable L.1,000, correa en áreas comunes
 
-RESTAURANTE: Abierto al público de 11am a 9pm.
+RESTAURANTE: Abierto al público de 11am a 9pm. Menú completo con entradas, carnes a la parrilla, parrilladas, menú infantil, smoothies y cócteles.
 
-UBICACIÓN: El Paraíso, Copán, Honduras. Carretera CA4 hacia Copán Ruinas, desvío en Florida, Copán.
+EXPERIENCIAS: Sesiones fotográficas L.1,000 (jardines, lago, caballos, arquitectura alpina). Eventos: bodas, quinceañeras, propuestas de matrimonio, reuniones familiares.
 
-Responde siempre en español, de forma elegante y cálida. Si el cliente pregunta algo que no puedes resolver, indícale que lo comunicarás con el equipo de la finca.`;
+UBICACIÓN: El Paraíso, Copán, Honduras. Carretera CA4 hacia Copán Ruinas, desvío en Florida, Copán → San Antonio → Buena Vista → Valle del Paraíso.
 
-// ✅ VERIFICACIÓN DE WEBHOOK — Meta llama este endpoint para verificar
+Responde siempre en español, de forma elegante y cálida. Máximo 3-4 oraciones por respuesta para no abrumar al cliente. Si el cliente pregunta algo que no puedes resolver, indícale que lo comunicarás con el equipo de la finca.`;
+
+// ✅ VERIFICACIÓN DE WEBHOOK — Meta verifica este endpoint
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  console.log('Verificación de Meta recibida:', { mode, token, challenge });
+  console.log('Verificación de Meta recibida:', { mode, token });
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log('Webhook verificado correctamente');
+    console.log('✅ Webhook verificado');
     res.status(200).send(challenge);
   } else {
-    console.log('Token de verificación incorrecto');
+    console.log('❌ Token incorrecto');
     res.sendStatus(403);
   }
 });
 
-// ✅ RECIBIR MENSAJES — Meta envía mensajes aquí
+// ✅ RECIBIR Y RESPONDER MENSAJES
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
@@ -88,7 +95,7 @@ app.post('/webhook', async (req, res) => {
 
     if (!text) return res.sendStatus(200);
 
-    console.log(`Mensaje de ${from}: ${text}`);
+    console.log(`📩 Mensaje de ${from}: ${text}`);
 
     // Historial de conversación
     if (!conversaciones[from]) {
@@ -98,7 +105,7 @@ app.post('/webhook', async (req, res) => {
     conversaciones[from].push({ role: 'user', content: text });
 
     // Llamar a Claude
-    const response = await axios.post(
+    const claudeResponse = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
         model: 'claude-haiku-20240307',
@@ -115,17 +122,33 @@ app.post('/webhook', async (req, res) => {
       }
     );
 
-    const reply = response.data.content[0].text;
-
+    const reply = claudeResponse.data.content[0].text;
     conversaciones[from].push({ role: 'assistant', content: reply });
 
-    console.log(`Respuesta de Vera: ${reply}`);
+    console.log(`💬 Vera responde: ${reply}`);
 
-    // Devolver respuesta a Make.com o al llamante
-    res.status(200).json({ reply, to: from });
+    // ✅ Enviar respuesta directamente a WhatsApp
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to: from,
+        type: 'text',
+        text: { body: reply },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    console.log(`✅ Respuesta enviada a ${from}`);
+    res.sendStatus(200);
 
   } catch (error) {
-    console.error('Error en webhook POST:', error.response?.data || error.message);
+    console.error('❌ Error:', error.response?.data || error.message);
     res.sendStatus(500);
   }
 });
@@ -136,5 +159,5 @@ app.get('/', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Vera corriendo en puerto ${PORT}`);
+  console.log(`🌿 Vera corriendo en puerto ${PORT}`);
 });
