@@ -11,6 +11,8 @@ const VERIFY_TOKEN = 'vera2024';
 
 const conversaciones = {};
 
+const NUMEROS_ALERTA = ['50495812311', '50498579377'];
+
 function obtenerSaludo() {
   const hora = new Date().toLocaleString('en-US', { 
     timeZone: 'America/Tegucigalpa', 
@@ -21,6 +23,53 @@ function obtenerSaludo() {
   if (h >= 5 && h < 12) return 'buenos días';
   if (h >= 12 && h < 18) return 'buenas tardes';
   return 'buenas noches';
+}
+
+function detectarIntencionDeposito(texto) {
+  const palabras = [
+    'depositar', 'depósito', 'transferir', 'transferencia',
+    'pagar', 'pago', 'reservar', 'confirmar reserva',
+    'listo para pagar', 'quiero pagar', 'cómo pago',
+    'como pago', 'datos bancarios', 'cuenta bancaria',
+    'número de cuenta', 'a qué cuenta', 'donde deposito'
+  ];
+  const textoLower = texto.toLowerCase();
+  return palabras.some(p => textoLower.includes(p));
+}
+
+async function enviarAlerta(numeroCliente, resumenConversacion) {
+  const mensaje = `🔔 *ALERTA DE RESERVA — Finca Las Vírgenes*\n\nUn cliente está listo para depositar.\n\n*Número:* +${numeroCliente}\n\n*Resumen:*\n${resumenConversacion}\n\nPor favor envíale los datos bancarios para confirmar la reserva.`;
+
+  for (const numero of NUMEROS_ALERTA) {
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: numero,
+          type: 'text',
+          text: { body: mensaje },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      console.log(`✅ Alerta enviada a ${numero}`);
+    } catch (err) {
+      console.error(`❌ Error enviando alerta a ${numero}:`, err.response?.data || err.message);
+    }
+  }
+}
+
+function obtenerResumen(historial) {
+  const mensajes = historial
+    .slice(-6)
+    .map(m => `${m.role === 'user' ? '👤 Cliente' : '🤖 Vera'}: ${m.content}`)
+    .join('\n');
+  return mensajes;
 }
 
 const SYSTEM_PROMPT = `Eres Vera, parte del equipo de atención de Finca Las Vírgenes, una finca turística premium ubicada en El Paraíso, Copán, Honduras.
@@ -38,6 +87,9 @@ Antes de presentar opciones de alojamiento, primero recopila:
 3. Fechas de llegada y salida
 
 Una vez que tengas esos datos, presenta las opciones más adecuadas.
+
+Cuando el cliente indique que está listo para pagar o depositar, responde exactamente así:
+"¡Perfecto! En un momento te compartimos los datos para realizar el depósito. Por favor espera un instante. 🌿"
 
 ALOJAMIENTOS — HABITACIONES:
 - Hab #5 Queen Confort: cama queen + sofá cama + escritorio + mininevera + terraza | L.2,600/noche | máx 3 personas
@@ -75,13 +127,10 @@ app.get('/webhook', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  console.log('Verificación de Meta recibida:', { mode, token });
-
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('✅ Webhook verificado');
     res.status(200).send(challenge);
   } else {
-    console.log('❌ Token incorrecto');
     res.sendStatus(403);
   }
 });
@@ -115,15 +164,21 @@ app.post('/webhook', async (req, res) => {
       conversaciones[from] = [];
     }
 
-    // Agregar saludo dinámico solo en el primer mensaje
     const esNuevoCliente = conversaciones[from].length === 0;
     const saludo = obtenerSaludo();
 
-    const systemConSaludo = esNuevoCliente 
+    const systemConSaludo = esNuevoCliente
       ? SYSTEM_PROMPT + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
       : SYSTEM_PROMPT;
 
     conversaciones[from].push({ role: 'user', content: text });
+
+    // Detectar intención de depósito
+    if (detectarIntencionDeposito(text)) {
+      const resumen = obtenerResumen(conversaciones[from]);
+      await enviarAlerta(from, resumen);
+      console.log(`🔔 Alerta de depósito enviada para ${from}`);
+    }
 
     const claudeResponse = await axios.post(
       'https://api.anthropic.com/v1/messages',
