@@ -39,10 +39,27 @@ function detectarIntencionDeposito(texto) {
 
 function detectarConsultaDisponibilidad(texto) {
   const palabras = [
-    'disponibilidad', 'disponible', 'hay espacio', 'tienen espacio',
-    'está disponible', 'esta disponible', 'hay lugar', 'tienen lugar',
-    'puedo reservar', 'se puede reservar', 'fechas disponibles',
-    'habitación disponible', 'cabaña disponible', 'cuarto disponible'
+    'disponibilidad', 'disponible', 'disponibles',
+    'espacio', 'espacios', 'lugar', 'lugares',
+    'cupo', 'cupos',
+    'para hoy', 'para mañana', 'para manana',
+    'para esta noche', 'para el fin de semana',
+    'para el finde', 'para el sabado', 'para el sábado',
+    'para el domingo', 'para este fin',
+    'queremos ir', 'quisiera ir', 'pensamos ir',
+    'vamos a ir', 'quiero ir', 'podemos ir',
+    'puedo ir', 'nos gustaría ir', 'nos gustaria ir',
+    'están ocupados', 'estan ocupados',
+    'está lleno', 'esta lleno', 'están llenos',
+    'hay cabañas', 'hay habitaciones',
+    'tienen cabañas', 'tienen habitaciones',
+    'hay algo', 'tienen algo',
+    'tengo fecha', 'tenemos fecha',
+    'hay espacio', 'tienen espacio',
+    'está disponible', 'esta disponible',
+    'hay lugar', 'tienen lugar',
+    'puedo reservar', 'se puede reservar',
+    'fechas disponibles'
   ];
   const textoLower = texto.toLowerCase();
   return palabras.some(p => textoLower.includes(p));
@@ -117,6 +134,10 @@ Tu personalidad es cálida, resuelta, elegante y siempre encuentras una solució
 Nunca menciones que eres un bot, inteligencia artificial o asistente virtual. Si alguien te pregunta directamente, responde que eres parte del equipo de atención al cliente de Finca Las Vírgenes.
 
 Siempre inicia tu primer mensaje con el saludo apropiado según la hora actual en Honduras. En mensajes siguientes no repitas el saludo.
+
+Si el cliente solicita un número de teléfono para contacto directo o llamada, proporciona siempre este número: +504 9581-2311. Nunca des otro número de contacto.
+
+Este canal de WhatsApp es exclusivamente para atención por mensajes de texto. No está habilitado para llamadas. Si el cliente desea comunicarse por llamada, proporciona siempre el número: +504 9581-2311.
 
 FLUJO DE CONVERSACIÓN:
 Antes de presentar opciones de alojamiento, primero recopila:
