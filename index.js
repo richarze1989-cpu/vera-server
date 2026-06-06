@@ -11,9 +11,25 @@ const VERIFY_TOKEN = 'vera2024';
 
 const conversaciones = {};
 
+function obtenerSaludo() {
+  const hora = new Date().toLocaleString('en-US', { 
+    timeZone: 'America/Tegucigalpa', 
+    hour: 'numeric', 
+    hour12: false 
+  });
+  const h = parseInt(hora);
+  if (h >= 5 && h < 12) return 'buenos días';
+  if (h >= 12 && h < 18) return 'buenas tardes';
+  return 'buenas noches';
+}
+
 const SYSTEM_PROMPT = `Eres Vera, parte del equipo de atención de Finca Las Vírgenes, una finca turística premium ubicada en El Paraíso, Copán, Honduras.
 
-Tu personalidad es cálida, resuelta, elegante y siempre encuentras una solución. Nunca dejas a un cliente sin respuesta. Representas el espíritu de la finca: paz, descanso, naturaleza y lujo simple. Nunca menciones que eres un bot, inteligencia artificial o asistente virtual. Si alguien te pregunta directamente, responde que eres parte del equipo de atención al cliente de Finca Las Vírgenes.
+Tu personalidad es cálida, resuelta, elegante y siempre encuentras una solución. Nunca dejas a un cliente sin respuesta. Representas el espíritu de la finca: paz, descanso, naturaleza y lujo simple.
+
+Nunca menciones que eres un bot, inteligencia artificial o asistente virtual. Si alguien te pregunta directamente, responde que eres parte del equipo de atención al cliente de Finca Las Vírgenes.
+
+Siempre inicia tu primer mensaje con el saludo apropiado según la hora actual en Honduras. En mensajes siguientes no repitas el saludo.
 
 FLUJO DE CONVERSACIÓN:
 Antes de presentar opciones de alojamiento, primero recopila:
@@ -36,12 +52,12 @@ ALOJAMIENTOS — CABAÑAS ALPINAS:
 - Cabaña Alpina Confort Familiar #1: 2 habitaciones + máx 7 personas | L.6,240/noche
 - Cabaña Alpina Deluxe Superior #2: buhardilla con 2 camas king + máx 7 personas | L.6,500/noche
 
-TODOS LOS ALOJAMIENTOS INCLUYEN: desayuno, acceso a piscina, jardines y restaurante.
+TODOS LOS ALOJAMIENTOS INCLUYEN: desayuno, acceso a piscina (no climatizada), jardines y restaurante.
 
 POLÍTICA DE RESERVAS:
 - Se requiere 50% o 100% de anticipo para confirmar
 - Check-in: 3:00 PM | Check-out: 11:00 AM
-- Cancellación +7 días: reagendar gratis o reembolso 80%
+- Cancelación +7 días: reagendar gratis o reembolso 80%
 - Cancelación 3-7 días: un reagendamiento gratis o reembolso 50%
 - Cancelación menos de 3 días: sin reembolso
 - Mascotas: máx 2, depósito reembolsable L.1,000, correa en áreas comunes
@@ -54,7 +70,6 @@ UBICACIÓN: El Paraíso, Copán, Honduras. Carretera CA4 hacia Copán Ruinas, de
 
 Responde siempre en español, de forma elegante y cálida. Máximo 3-4 oraciones por respuesta para no abrumar al cliente. Si el cliente pregunta algo que no puedes resolver, indícale que lo comunicarás con el equipo de la finca.`;
 
-// ✅ VERIFICACIÓN DE WEBHOOK — Meta verifica este endpoint
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -71,7 +86,6 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// ✅ RECIBIR Y RESPONDER MENSAJES
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
@@ -97,20 +111,26 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`📩 Mensaje de ${from}: ${text}`);
 
-    // Historial de conversación
     if (!conversaciones[from]) {
       conversaciones[from] = [];
     }
 
+    // Agregar saludo dinámico solo en el primer mensaje
+    const esNuevoCliente = conversaciones[from].length === 0;
+    const saludo = obtenerSaludo();
+
+    const systemConSaludo = esNuevoCliente 
+      ? SYSTEM_PROMPT + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
+      : SYSTEM_PROMPT;
+
     conversaciones[from].push({ role: 'user', content: text });
 
-    // Llamar a Claude
     const claudeResponse = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
-        system: SYSTEM_PROMPT,
+        system: systemConSaludo,
         messages: conversaciones[from],
       },
       {
@@ -127,7 +147,6 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`💬 Vera responde: ${reply}`);
 
-    // ✅ Enviar respuesta directamente a WhatsApp
     await axios.post(
       `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
       {
