@@ -37,6 +37,17 @@ function detectarIntencionDeposito(texto) {
   return palabras.some(p => textoLower.includes(p));
 }
 
+function detectarConsultaDisponibilidad(texto) {
+  const palabras = [
+    'disponibilidad', 'disponible', 'hay espacio', 'tienen espacio',
+    'está disponible', 'esta disponible', 'hay lugar', 'tienen lugar',
+    'puedo reservar', 'se puede reservar', 'fechas disponibles',
+    'habitación disponible', 'cabaña disponible', 'cuarto disponible'
+  ];
+  const textoLower = texto.toLowerCase();
+  return palabras.some(p => textoLower.includes(p));
+}
+
 async function enviarAlerta(numeroCliente, resumenConversacion) {
   const mensaje = `🔔 *ALERTA DE RESERVA — Finca Las Vírgenes*\n\nUn cliente está listo para depositar.\n\n*Número:* +${numeroCliente}\n\n*Resumen:*\n${resumenConversacion}\n\nPor favor envíale los datos bancarios para confirmar la reserva.`;
 
@@ -58,6 +69,33 @@ async function enviarAlerta(numeroCliente, resumenConversacion) {
         }
       );
       console.log(`✅ Alerta enviada a ${numero}`);
+    } catch (err) {
+      console.error(`❌ Error enviando alerta a ${numero}:`, err.response?.data || err.message);
+    }
+  }
+}
+
+async function enviarAlertaDisponibilidad(numeroCliente, resumenConversacion) {
+  const mensaje = `📅 *CONSULTA DE DISPONIBILIDAD — Finca Las Vírgenes*\n\nUn cliente está preguntando por disponibilidad.\n\n*Número:* +${numeroCliente}\n\n*Resumen:*\n${resumenConversacion}\n\nPor favor verificar en Little Hotelier y confirmar al cliente.`;
+
+  for (const numero of NUMEROS_ALERTA) {
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: numero,
+          type: 'text',
+          text: { body: mensaje },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      console.log(`✅ Alerta de disponibilidad enviada a ${numero}`);
     } catch (err) {
       console.error(`❌ Error enviando alerta a ${numero}:`, err.response?.data || err.message);
     }
@@ -87,6 +125,12 @@ Antes de presentar opciones de alojamiento, primero recopila:
 3. Fechas de llegada y salida
 
 Una vez que tengas esos datos, presenta las opciones más adecuadas.
+
+Cuando el cliente pregunte por disponibilidad, responde exactamente así:
+"¡Con gusto! Para verificar disponibilidad necesito saber:
+📅 ¿Qué fechas tienes en mente? (fecha de llegada y salida)
+👥 ¿Cuántas personas son?
+En un momento te confirmamos. 🌿"
 
 Cuando el cliente indique que está listo para pagar o depositar, responde exactamente así:
 "¡Perfecto! En un momento te compartimos los datos para realizar el depósito. Por favor espera un instante. 🌿"
@@ -178,6 +222,13 @@ app.post('/webhook', async (req, res) => {
       const resumen = obtenerResumen(conversaciones[from]);
       await enviarAlerta(from, resumen);
       console.log(`🔔 Alerta de depósito enviada para ${from}`);
+    }
+
+    // Detectar consulta de disponibilidad
+    if (detectarConsultaDisponibilidad(text)) {
+      const resumen = obtenerResumen(conversaciones[from]);
+      await enviarAlertaDisponibilidad(from, resumen);
+      console.log(`📅 Alerta de disponibilidad enviada para ${from}`);
     }
 
     const claudeResponse = await axios.post(
