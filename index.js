@@ -16,6 +16,7 @@ const VERIFY_TOKEN = 'vera2024';
 // ──────────────────────────────────────────────────────────────────────────────
 
 const conversaciones = {};
+const procesados = new Set();
 const NUMEROS_ALERTA = ['50495812311', '50498579377'];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -201,7 +202,11 @@ app.post('/chatwoot-webhook', async (req, res) => {
 
     // Solo procesar mensajes entrantes de clientes (no los de VERA)
     if (body.message_type !== 'incoming') return;
-    if (body.event !== 'message_created') return;
+if (body.event !== 'message_created') return;
+const msgId = body.id;
+if (procesados.has(msgId)) return;
+procesados.add(msgId);
+setTimeout(() => procesados.delete(msgId), 60000);
 
     const text = body.content;
     const conversationId = body.conversation?.id;
