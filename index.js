@@ -425,7 +425,15 @@ app.get('/', (req, res) => {
   res.send('Vera - Finca Las Vírgenes está activa ✅');
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000; // Mantener servidor activo en Render (plan gratuito)
+const https = require('https');
+setInterval(() => {
+  https.get('https://vera-server-gxdo.onrender.com', (res) => {
+    console.log('🔄 Auto-ping: servidor activo');
+  }).on('error', (err) => {
+    console.log('⚠️ Auto-ping error:', err.message);
+  });
+}, 840000); // cada 14 minutos
 app.listen(PORT, () => {
   console.log(`🌿 Vera corriendo en puerto ${PORT}`);
 });
