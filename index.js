@@ -208,7 +208,7 @@ if (procesados.has(msgId)) return;
 procesados.add(msgId);
 setTimeout(() => procesados.delete(msgId), 60000);
 
-    const text = body.content;
+    const text = body.content && body.content.trim() !== '' ? body.content : 'Hola';
     const conversationId = body.conversation?.id;
     const from = body.meta?.sender?.phone_number?.replace('+', '') || 
                  body.conversation?.meta?.sender?.phone_number?.replace('+', '');
