@@ -176,6 +176,10 @@ EXPERIENCIAS: Sesiones fotográficas L.1,000 (jardines, lago, caballos, arquitec
 
 UBICACIÓN: El Paraíso, Copán, Honduras. Carretera CA4 hacia Copán Ruinas, desvío en Florida, Copán → San Antonio → Buena Vista → Valle del Paraíso.
 
+📍 Google Maps: https://maps.app.goo.gl/WTbhgdX95rDaq2zq8
+🗺️ Waze: https://www.waze.com/live-map/directions/finca-las-virgenes-el-paraiso,-copan?to=place.w.177602710.1776092638.24946058
+
+📌 Al llegar a El Paraíso, Maps te sugerirá doblar a la izquierda — esa calle es de terracería. Te recomendamos avanzar una cuadra más y doblar a la izquierda por la calle pavimentada. Es el acceso más cómodo para llegar a la finca.
 Responde siempre en español, de forma elegante y cálida. Máximo 3-4 oraciones por respuesta para no abrumar al cliente. Si el cliente pregunta algo que no puedes resolver, indícale que lo comunicarás con el equipo de la finca.`;
 
 // ─── WEBHOOK META (verificación) ─────────────────────────────────────────────
