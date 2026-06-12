@@ -227,6 +227,8 @@ app.post('/chatwoot-webhook', async (req, res) => {
     const body = req.body;
     if (body.message_type !== 'incoming') return;
     if (body.event !== 'message_created') return;
+    const conversationStatus = body.conversation?.status;
+    if (conversationStatus === 'pending') return;
     const msgId = body.id;
     if (procesados.has(msgId)) return;
     procesados.add(msgId);
