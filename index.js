@@ -193,7 +193,7 @@ Tarifa pareja (1-2 personas):
 
 Tarifa familiar (3 o más personas):
 - Cabaña #3 o #6: L.4,640/noche | máx 5 personas
-- Cabaña #5 y #6 juntas: L.6,500 ambas | ideal grupos con privacidad
+- Cabañas #5 y #6 juntas: L.6,500 ambas | ideal grupos con privacidad
 - Cabaña #1: L.6,240/noche | 2 habitaciones + 2 terrazas | máx 6 personas
 - Cabaña #2: L.6,500/noche | ático con 2 camas matrimoniales + sofácama | máx 7 personas
 
@@ -274,8 +274,6 @@ app.post('/chatwoot-webhook', async (req, res) => {
     const body = req.body;
     if (body.message_type !== 'incoming') return;
     if (body.event !== 'message_created') return;
-    const conversationStatus = body.conversation?.status;
-    if (conversationStatus === 'pending') return;
     const msgId = body.id;
     if (procesados.has(msgId)) return;
     procesados.add(msgId);
