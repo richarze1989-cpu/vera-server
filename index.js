@@ -99,6 +99,14 @@ async function enviarAlertaDisponibilidad(numeroCliente, resumen) {
   }
 }
 
+function calcularDelay(texto) {
+  const palabras = texto.split(' ').length;
+  // Velocidad humana promedio: ~40 palabras por minuto escribiendo
+  // Mínimo 3 segundos, máximo 12 segundos
+  const segundos = Math.min(Math.max(Math.floor(palabras / 4), 3), 12);
+  return segundos * 1000;
+}
+
 async function responderEnChatwoot(conversationId, mensaje) {
   try {
     await axios.post(
@@ -229,15 +237,21 @@ Tarifa familiar (3 o más personas):
 - Cabaña #2: L.6,500/noche | ático con 2 camas matrimoniales + sofácama | máx 7 personas
 
 ALOJAMIENTOS — HABITACIONES:
-- Hab #5 Queen Confort: cama queen + sofá cama + escritorio + mininevera + terraza | L.2,600/noche | máx 3 personas
-- Hab 402 Deluxe King: cama king + mininevera + terraza jardín | L.3,000/noche | ideal parejas
-- Hab 403 Deluxe King: cama king + mininevera + porche jardín | L.3,000/noche | ideal parejas
-- Hab 404 Deluxe Queen Superior: cama queen + sofá cama + terraza + excelente vista | L.3,000/noche | máx 3 personas
-- Hab 401 Junior Suite: nuestra Junior Suite — cama queen + sofá cama + sala + porche + mininevera | L.3,500/noche | máx 3 personas
+- Hab #5 Queen Confort: cama queen + sofá cama + escritorio + mininevera + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.2,600/noche | máx 3 personas
+- Hab 402 Deluxe King: cama king + mininevera + terraza jardín | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,000/noche | ideal parejas
+- Hab 403 Deluxe King: cama king + mininevera + porche jardín | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,000/noche | ideal parejas
+- Hab 404 Deluxe Queen Superior: cama queen + sofá cama + terraza + excelente vista | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,000/noche | máx 3 personas
+- Hab 401 Junior Suite: nuestra Junior Suite — cama queen + sofá cama + sala + porche + mininevera | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,500/noche | máx 3 personas
+
+ALOJAMIENTOS — CABAÑAS:
+- Cabaña #3: cama queen + litera + sofácama + escritorio + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche | máx 5 personas
+- Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche | máx 5 personas
+- Cabaña #1: 2 camas queen + litera + sofácama + 2 habitaciones + 2 terrazas panorámicas | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,240/noche | máx 6 personas
+- Cabaña #2: cama queen + ático con 2 camas matrimoniales + sofácama + sala + terraza + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,500/noche | máx 7 personas
 
 NOTA: Las habitaciones 401, 402, 403 y 404 forman parte de la Cabaña #4 completa, que puede reservarse en su totalidad por L.12,000/noche — ideal para grupos o familias que deseen exclusividad total.
 
-TODOS LOS ALOJAMIENTOS INCLUYEN: desayuno, acceso a piscina, jardines y restaurante.
+TODOS LOS ALOJAMIENTOS INCLUYEN: aire acondicionado, agua caliente, WiFi, Smart TV, desayuno, acceso a piscina, jardines y restaurante.
 
 POLÍTICA DE RESERVAS:
 - Se requiere 50% o 100% de anticipo para confirmar
@@ -275,6 +289,18 @@ Cuando el cliente pida fotos o imágenes, comparte el link específico según lo
 
 Cuando compartas un link de fotos, hazlo así:
 "¡Aquí puedes ver las fotos directamente! 📸 [link] 🌿"
+
+ATRACCIONES CERCANAS — GUÍA PARA HUÉSPEDES:
+Cuando un huésped pregunte qué puede hacer en los alrededores, qué hay cerca, o qué visitar durante su estadía, comparte esta información de forma cálida y personalizada. Presenta la finca como la base perfecta para explorar la región y regresar a descansar.
+
+- 🏛️ *Parque Central de El Paraíso* — A pocos minutos de la finca. Recién inaugurado y muy bonito, especialmente al atardecer. Ideal para una caminata tranquila.
+- ⛪ *Iglesia Católica de El Paraíso* — Elevada recientemente a parroquia. Destaca por su fino trabajo en madera en el interior. Un lugar especial y muy fotogénico, incluso apto para bodas.
+- ⚡ *Hidroeléctrica Morja* — A 30 minutos de la finca. Puedes visitar una cascada natural y la sala de máquinas de la planta. El personal de la finca puede darte las indicaciones para llegar.
+- 🏺 *Parque Arqueológico El Puente* — A 1 hora por carretera pavimentada. Sitio arqueológico maya en un entorno tranquilo, sin aglomeraciones. Una experiencia auténtica y diferente a Copán Ruinas.
+- 🌿 *Copán Ruinas* — A 1 hora 30 minutos. El destino arqueológico más importante de Honduras. Combina ruinas mayas imponentes, gastronomía local y calles coloniales con encanto. Ideal salir temprano, explorar todo el día y regresar a la finca a descansar.
+
+Cuando presentes estas opciones, puedes cerrar con algo como:
+"La finca es el punto de partida perfecto para explorar toda esta región. Llegas, descansas y sales a descubrir. 🌿"
 
 UBICACIÓN: El Paraíso, Copán, Honduras. Carretera CA4 hacia Copán Ruinas, desvío en Florida, Copán → San Antonio → Buena Vista → Valle del Paraíso.
 
@@ -349,6 +375,9 @@ app.post('/chatwoot-webhook', async (req, res) => {
     const reply = claudeResponse.data.content[0].text;
     conversaciones[key].push({ role: 'assistant', content: reply });
     console.log(`💬 Vera responde: ${reply}`);
+    const delay = calcularDelay(reply);
+    console.log(`⏳ Esperando ${delay / 1000}s antes de responder (efecto humano)`);
+    await new Promise(resolve => setTimeout(resolve, delay));
     await responderEnChatwoot(conversationId, reply);
   } catch (error) {
     console.error('❌ Error en chatwoot-webhook:', error.response?.data || error.message);
