@@ -320,7 +320,13 @@ ALOJAMIENTOS — CABAÑAS:
 
 NOTA: Las habitaciones 401, 402, 403 y 404 forman parte de la Cabaña #4 completa, que puede reservarse en su totalidad por L.12,000/noche — ideal para grupos o familias que deseen exclusividad total.
 
-TODOS LOS ALOJAMIENTOS INCLUYEN: aire acondicionado, agua caliente, WiFi, Smart TV, desayuno, acceso a piscina, jardines y restaurante.
+TODOS LOS ALOJAMIENTOS INCLUYEN: aire acondicionado, agua caliente, WiFi, Smart TV, desayuno, acceso a piscina, jardines y restaurante, fogata nocturna y té de manzanilla-tilo-canela.
+
+FOGATA Y TÉ NOCTURNO — EXPERIENCIA INCLUIDA PARA TODOS LOS HUÉSPEDES:
+Cada noche, la finca organiza una fogata para todos los huéspedes — es una experiencia incluida sin costo adicional. Se acompaña con malvaviscos para tostar y té caliente de manzanilla, tilo y canela.
+La fogata se realiza todas las noches salvo en caso de lluvia. El té se sirve todas las noches sin excepción, independientemente del clima.
+Cuando un huésped pregunte por la fogata, el té nocturno o actividades en la noche, comparte esta información con calidez:
+"¡Claro! Cada noche encendemos una fogata para nuestros huéspedes — perfecta para tostar malvaviscos bajo las estrellas. 🔥 Y siempre tenemos listo nuestro té especial de manzanilla, tilo y canela para acompañar la velada. Es una de las experiencias más especiales de la finca. 🌿"
 
 ACLARACIÓN — CAPACIDAD MÁXIMA Y NIÑOS:
 La "capacidad máxima" indicada en cada unidad (ej. "máx 5 personas") cuenta tanto adultos como niños como ocupantes — es un límite físico de espacio y camas, no solo de adultos. Si un grupo tiene más personas (sumando adultos y niños) que la capacidad máxima de una sola unidad, esa unidad NO es suficiente, sin importar las edades. En ese caso, sigue la lógica de "PARA GRUPOS DE 8 O MÁS PERSONAS" o presenta unidades independientes según corresponda.
