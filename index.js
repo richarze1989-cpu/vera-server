@@ -13,9 +13,63 @@ const CHATWOOT_URL = 'https://app.chatwoot.com';
 const CHATWOOT_ACCOUNT_ID = '169097';
 const VERIFY_TOKEN = 'vera2024';
 
+// Caché en RAM: { mensajes: [], ultimaActividad: timestamp }
 const conversaciones = {};
 const procesados = new Set();
 const NUMEROS_ALERTA = ['50495812311', '50498579377'];
+
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+const MAX_MENSAJES_CONTEXTO = 40;
+const MENSAJES_RECIENTES = 30;
+
+setInterval(() => {
+  const ahora = Date.now();
+  let eliminadas = 0;
+  for (const key of Object.keys(conversaciones)) {
+    if (ahora - conversaciones[key].ultimaActividad > CACHE_TTL_MS) {
+      delete conversaciones[key];
+      eliminadas++;
+    }
+  }
+  if (eliminadas > 0) console.log(`🧹 Caché limpiado: ${eliminadas} conversación(es) expirada(s)`);
+}, 60 * 60 * 1000);
+
+async function cargarHistorialDesdeChatwoot(conversationId) {
+  try {
+    const response = await axios.get(
+      `${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`,
+      { headers: { 'api_access_token': CHATWOOT_API_TOKEN } }
+    );
+    const mensajes = response.data?.payload?.messages || response.data?.payload || [];
+    const historial = mensajes
+      .filter(m => m.content && m.content.trim() !== '' && m.message_type !== 'activity')
+      .sort((a, b) => a.created_at - b.created_at)
+      .map(m => ({
+        role: m.message_type === 'incoming' ? 'user' : 'assistant',
+        content: m.content.trim()
+      }));
+    console.log(`📂 Historial cargado desde Chatwoot (conv ${conversationId}): ${historial.length} mensajes`);
+    return historial;
+  } catch (err) {
+    console.error(`⚠️ No se pudo cargar historial de conv ${conversationId}:`, err.response?.data || err.message);
+    return [];
+  }
+}
+
+function aplicarVentanaDeContexto(mensajes) {
+  if (mensajes.length <= MAX_MENSAJES_CONTEXTO) return mensajes;
+  const recientes = mensajes.slice(-MENSAJES_RECIENTES);
+  const anteriores = mensajes.slice(0, mensajes.length - MENSAJES_RECIENTES);
+  const lineas = anteriores.map(function(m) {
+    return (m.role === 'user' ? 'Cliente' : 'Vera') + ': ' + m.content;
+  });
+  const textoAnterior = lineas.join('\n');
+  const resumen = {
+    role: 'user',
+    content: '[CONTEXTO PREVIO — ' + anteriores.length + ' mensajes anteriores]\n' + textoAnterior + '\n[FIN DE CONTEXTO PREVIO — continúa la conversación actual:]'
+  };
+  return [resumen].concat(recientes);
+}
 
 function obtenerSaludo() {
   const hora = new Date().toLocaleString('en-US', {
@@ -556,24 +610,44 @@ app.post('/chatwoot-webhook', async (req, res) => {
     }
     console.log(`📩 Mensaje de Chatwoot (conv ${conversationId}): ${text}`);
     const key = `conv_${conversationId}`;
-    if (!conversaciones[key]) conversaciones[key] = [];
-    const esNuevoCliente = conversaciones[key].length === 0;
+
+    // Si el caché no existe (proceso recién iniciado o conversación expirada),
+    // carga el historial completo desde Chatwoot antes de continuar — await completo
+    if (!conversaciones[key]) {
+      const historialPrevio = await cargarHistorialDesdeChatwoot(conversationId);
+      conversaciones[key] = {
+        mensajes: historialPrevio,
+        ultimaActividad: Date.now()
+      };
+    }
+
+    // Actualizar timestamp de actividad en el caché
+    conversaciones[key].ultimaActividad = Date.now();
+
+    const esNuevoCliente = conversaciones[key].mensajes.length === 0;
     const saludo = obtenerSaludo();
     const systemConSaludo = esNuevoCliente
       ? SYSTEM_PROMPT + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
       : SYSTEM_PROMPT;
-    conversaciones[key].push({ role: 'user', content: text });
+
+    // Agregar mensaje del cliente al caché
+    conversaciones[key].mensajes.push({ role: 'user', content: text });
+
     if (from) {
-      if (detectarIntencionDeposito(text)) await enviarAlerta(from, obtenerResumen(conversaciones[key]));
-      if (detectarConsultaDisponibilidad(text)) await enviarAlertaDisponibilidad(from, obtenerResumen(conversaciones[key]));
+      if (detectarIntencionDeposito(text)) await enviarAlerta(from, obtenerResumen(conversaciones[key].mensajes));
+      if (detectarConsultaDisponibilidad(text)) await enviarAlertaDisponibilidad(from, obtenerResumen(conversaciones[key].mensajes));
     }
+
+    // Aplicar ventana de contexto (máx 40 mensajes) antes de enviar al modelo
+    const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
+
     const claudeResponse = await axios.post(
       'https://api.anthropic.com/v1/messages',
       {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: systemConSaludo,
-        messages: conversaciones[key]
+        messages: mensajesParaClaude
       },
       {
         headers: {
@@ -584,7 +658,8 @@ app.post('/chatwoot-webhook', async (req, res) => {
       }
     );
     const reply = claudeResponse.data.content[0].text;
-    conversaciones[key].push({ role: 'assistant', content: reply });
+    conversaciones[key].mensajes.push({ role: 'assistant', content: reply });
+    conversaciones[key].ultimaActividad = Date.now(); // actualizar también al responder
     console.log(`💬 Vera responde: ${reply}`);
     const delay = calcularDelay(reply);
     console.log(`⏳ Esperando ${delay / 1000}s antes de responder (efecto humano)`);
