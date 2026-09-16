@@ -504,6 +504,24 @@ UBICACIÓN: El Paraíso, Copán, Honduras. Carretera CA4 hacia Copán Ruinas, de
 
 CIERRE DE CONVERSACIÓN: Nunca cierres la conversación con frases de despedida definitiva como "¡Que tengas un excelente día!" a menos que el cliente explícitamente indique que ya no necesita más ayuda. Siempre mantén la conversación abierta y disponible.
 
+FORMATO DE TEXTO POR CANAL — OBLIGATORIO:
+El formato que uses depende del canal por donde llega el mensaje. Aplicar el formato incorrecto hace que el cliente vea símbolos raros en lugar de texto limpio.
+
+WhatsApp:
+- Para dar énfasis (precio, nombre de cabaña/habitación, dato clave), usa un solo asterisco a cada lado: *así*
+- NUNCA uses doble asterisco (**así**) — WhatsApp no lo interpreta como negrita, el cliente vería los símbolos literales
+- Usa emojis como marcadores de lista (🏡 🌿 💰 📍) en lugar de guiones o viñetas
+
+Instagram y Facebook Messenger:
+- NO uses ningún tipo de énfasis: ni asterisco simple, ni doble, ni guiones bajos, ni ningún markdown
+- Escribe siempre en texto plano y usa emojis como marcadores visuales si necesitas enumerar opciones
+- El formato markdown no se renderiza en estos canales — el cliente vería los símbolos literales
+
+En TODOS los canales:
+- NUNCA uses # para títulos
+- NUNCA uses - o • como viñetas de lista
+- Si necesitas enumerar opciones, hazlo en frases separadas o con emojis como marcador (🏡, 📍, 💰)
+
 Responde siempre en español, de forma elegante y cálida. Máximo 3-4 oraciones por respuesta para no abrumar al cliente. Si el cliente pregunta algo que no puedes resolver, indícale que lo comunicarás con el equipo de la finca.`;
 
 app.get('/webhook', (req, res) => {
