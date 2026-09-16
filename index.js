@@ -379,12 +379,96 @@ POLÍTICA DE RESERVAS:
 - Cancelación menos de 3 días: sin reembolso
 - Mascotas: máx 2, depósito reembolsable L.1,000, correa en áreas comunes
 
-RESTAURANTE: Abierto al público de 11am a 9pm. Menú completo con entradas, carnes a la parrilla, parrilladas, menú infantil, smoothies y cócteles.
+RESTAURANTE LAS VÍRGENES — Abierto al público de 11am a 9pm:
 
-MENÚ DEL RESTAURANTE — MUY IMPORTANTE:
-Cuando el cliente pregunte por el menú, la carta, los precios del restaurante o qué se sirve, NO describas los platillos de memoria. Usa el mismo mensaje estándar del catálogo completo indicado en la sección "CATÁLOGO DE FOTOS — AVISO TEMPORAL" más abajo.
+BEBIDAS (refrescantes, naturales y hechas al momento):
+- Natural Jamaica L.30 | Natural Nance L.30 | Natural Tamarindo L.30
+- Bebidas Carbonatadas L.35 | Gatorade L.40 | Agua L.25
 
-No hagas preguntas adicionales después de compartir el link del menú.
+SMOOTHIES (preparados al momento con fruta fresca):
+- Limón con Agua L.80 | Limón con Fresa L.100 | Melón L.80
+- Piña L.80 | Limón con Soda L.90 | Sandía L.80 | Fresa L.90
+
+COCKTAILS (para disfrutar sin prisa):
+- Piña Colada L.150 | Mojito Cubano L.150 | Michelada L.150
+- Daiquiri L.150 | Margarita L.150 | Mojito Strawberry L.150
+
+PARRILLADAS (pensadas para compartir en familia o con amigos):
+- Parrillada para 2: L.590
+- Parrillada para 4: L.1,175
+- Parrillada para 6: L.1,650
+
+HAMBURGUESAS (a la parrilla, hechas al momento):
+- Hamburguesa de la Casa L.200 | Hamburguesa Clásica L.200
+- Hamburguesa Suiza L.200 | Hamburguesa Cubana L.220
+- Chicken Burger L.220 | Jalapeño Burger L.220
+- Camarón Burger L.300
+
+MENÚ NIÑOS (para los peques de la casa):
+- Hamburguesa Junior L.120 | Chicken Fingers L.120 | Papas Fritas L.50
+
+COMIDAS RÁPIDAS (rápidas, pero bien hechas):
+- Chicken Fingers Empanizados (Adulto) L.170
+- Chicken Fingers salsa BBQ L.190
+- Chicken Fingers salsa Búfalo L.190
+- Alitas 6 unidades L.190 | Alitas 12 unidades L.380
+- Sándwich Cubano L.200
+
+SABORES DE NUESTRA TIERRA (recetas tradicionales del pueblo):
+- Carnitas L.180 | Pollo con Tajadas L.160
+- Tajadas de la Casa L.180 | Cena Típica L.190
+- Burrito de Res L.200
+
+ADICIONALES:
+- Frijoles Fritos L.15 | Salsas de la Casa L.15
+- Encurtido L.15 | Tajadas L.30
+
+ENTRADAS (ideales para compartir):
+- Picadita (tortillas chips, frijoles, trocitos de chorizo y res) L.200
+- Aros de Cebolla (10 aros empanizados) L.120
+- Anafre (frijoles fritos con chorizo, quesillo y tortillas chips) L.170
+- Dedos de Queso (6 deditos empanizados) L.130
+- Ensalada de la Casa L.200
+
+ESPECIALES DE LA CASA (nuestros platos más recomendados):
+- Camarones Empanizados L.300 | Camarones al Ajillo L.300
+- Camarones a la Diabla L.300 | Cordon Bleu L.240
+- Filete de Pollo en Crema de Hongos L.240
+- Filete de Res en Salsa Jalapeña L.240
+- Fajitas de Res en Crema L.240 | Mar y Tierra L.390
+- Pollo Chipotle L.240 | Costilla BBQ L.240
+- Fetuccini de Camarón L.300 | Fetuccini de Pollo L.280
+- Asado de Tira L.380
+
+ASADOS (preparados al fuego):
+- Asado de Res L.200 | Asado de Pollo L.200
+- Costilla de Cerdo L.200 | Chorizo Parrillero L.170
+- Asado Doble L.300 | Asado Extra Chorizo L.230
+
+KIOSKO FINCA LAS VÍRGENES (un antojo, un café y un momento para disfrutar):
+
+CAFÉS:
+- Café Latte L.60 | Capuchino L.60
+- Americano L.45 | Chocolate Caliente L.60
+
+LICUADOS (frescos y naturales — banano, fresa, papaya, cereal, cornflakes, chocolate o granola):
+- Licuados L.100
+
+FRAPPÉS Y GRANIZADAS:
+- Frappe de Fresa L.80 | Frappe de Oreo L.80
+- Granita de Fresa L.60 | Granita de Café L.60
+
+ANTOJOS DE LA CASA:
+- Zambo Preparado L.100 | Croissant Sandwich L.80
+- Waffles (orden) L.100 | Ensalada de Fruta L.100
+- Coctel de Fruta L.45
+
+POSTRES:
+- Ice Cream L.80 | Pan del Día L.30
+- Postre del Día L.90 | Gelatina L.45
+
+MENÚ DEL RESTAURANTE — INSTRUCCIÓN PARA VERA:
+Cuando el cliente pregunte por el menú, la carta o los precios del restaurante/kiosko, puedes compartir la información de la sección correspondiente directamente. Si el cliente pregunta por fotos del menú o de la comida, usa el link del catálogo completo indicado en "CATÁLOGO DE FOTOS — AVISO TEMPORAL" más abajo.
 
 EXPERIENCIAS: Sesiones fotográficas L.1,000 (jardines, lago, caballos, arquitectura alpina). Eventos: bodas, quinceañeras, propuestas de matrimonio, reuniones familiares.
 
