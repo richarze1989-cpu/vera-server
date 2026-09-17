@@ -576,7 +576,20 @@ En TODOS los canales:
 - NUNCA uses - o • como viñetas de lista
 - Si necesitas enumerar opciones, hazlo en frases separadas o con emojis como marcador (🏡, 📍, 💰)
 
-Responde siempre en español, de forma elegante y cálida. Máximo 3-4 oraciones por respuesta para no abrumar al cliente. Si el cliente pregunta algo que no puedes resolver, indícale que lo comunicarás con el equipo de la finca.`;
+ESTILO DE RESPUESTA — LONGITUD Y CALIDEZ:
+Responde como alguien de la finca que conoce bien el lugar y disfruta contarlo — no como un catálogo ni una ficha técnica.
+
+Da primero lo más importante, en un mensaje corto y natural (1–3 líneas). Si hay más información relevante (varias opciones de precio, política completa, lista larga de servicios), no la elimines: ofrécela como siguiente paso — "¿Quieres que te cuente también sobre...?" o "Con gusto te paso el detalle completo si te sirve."
+
+Nunca sacrifiques información importante por acortar. Lo que cambia es CÓMO se entrega, no QUÉ se entrega: si el cliente pregunta algo específico (precio, política, disponibilidad), respóndelo completo, en frases directas — no en párrafos largos ni listas extensas metidas en un solo mensaje.
+
+Si la respuesta completa supera aproximadamente 400 caracteres, divídela en dos mensajes cortos en vez de uno largo. Para enviar dos mensajes separados, escribe el primero, luego una línea que contenga únicamente "---SPLIT---", y luego el segundo mensaje. El sistema los enviará como dos mensajes independientes al cliente.
+
+Evita frases de relleno, repetir lo que el cliente ya dijo, o explicaciones antes de ir al punto.
+
+Mantén un tono cálido y elegante, nunca seco ni robótico — en la línea de "Así comienzan los buenos días ✨" o "El lujo de despertar rodeado de naturaleza." La calidez se nota en las palabras, no en exceso de emojis ni frases exageradas.
+
+Responde siempre en español. Si el cliente pregunta algo que no puedes resolver, indícale que lo comunicarás con el equipo de la finca.`;
 
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -658,13 +671,25 @@ app.post('/chatwoot-webhook', async (req, res) => {
       }
     );
     const reply = claudeResponse.data.content[0].text;
-    conversaciones[key].mensajes.push({ role: 'assistant', content: reply });
-    conversaciones[key].ultimaActividad = Date.now(); // actualizar también al responder
+    conversaciones[key].ultimaActividad = Date.now();
     console.log(`💬 Vera responde: ${reply}`);
-    const delay = calcularDelay(reply);
-    console.log(`⏳ Esperando ${delay / 1000}s antes de responder (efecto humano)`);
-    await new Promise(resolve => setTimeout(resolve, delay));
-    await responderEnChatwoot(conversationId, reply);
+
+    // Dividir por ---SPLIT--- antes de guardar en historial y enviar
+    const partes = reply.split('---SPLIT---').map(p => p.trim()).filter(p => p.length > 0);
+
+    // Guardar cada parte como entrada separada en el historial — así el contexto
+    // refleja exactamente lo que el cliente recibió, sin el marcador técnico
+    for (const parte of partes) {
+      conversaciones[key].mensajes.push({ role: 'assistant', content: parte });
+    }
+
+    // Enviar cada parte secuencialmente con su propio delay
+    for (let i = 0; i < partes.length; i++) {
+      const delay = calcularDelay(partes[i]);
+      console.log(`⏳ Esperando ${delay / 1000}s antes de enviar parte ${i + 1}/${partes.length}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      await responderEnChatwoot(conversationId, partes[i]);
+    }
   } catch (error) {
     console.error('❌ Error en chatwoot-webhook:', error.response?.data || error.message);
   }
