@@ -398,10 +398,10 @@ ALOJAMIENTOS — HABITACIONES (diseñadas para parejas):
 - Hab 401 Junior Suite: nuestra Junior Suite — cama queen + sofácama unipersonal + sala + porche + mininevera | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,500/noche | para parejas (sofácama para 1 niño adicional)
 
 ALOJAMIENTOS — CABAÑAS:
-- Cabaña #3: cama queen + litera + sofácama + escritorio + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,900/noche (3 personas) — L.4,640/noche (4-5 personas) | máx 5 personas | capacidad base: 3 personas
+- Cabaña #3: cama queen + litera + sofácama + escritorio + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,900/noche (3 personas) — L.4,640/noche (4-5 personas) | máx 5 personas | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
 - Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,900/noche (3 personas) — L.4,640/noche (4-5 personas) | máx 5 personas | capacidad base: 3 personas
-- Cabaña #1: 2 camas queen + litera + sofácama + 2 habitaciones + deck en porche + terraza con gran vista en segundo nivel | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,240/noche | máx 6 personas | capacidad base: 4 personas
-- Cabaña #2: habitación privada con cama queen + ático con 2 camas matrimoniales + sofácama + sala + terraza + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,500/noche | máx 7 personas | capacidad base: 4 personas
+- Cabaña #1: 2 camas queen + litera + sofácama + 2 habitaciones + deck en porche + terraza con gran vista en segundo nivel | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,240/noche | máx 6 personas | precio L.6,240 cubre hasta 6 personas — sin cargo extra posible
+- Cabaña #2: habitación privada con cama queen + ático con 2 camas matrimoniales + sofácama + sala + terraza + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,500/noche | máx 7 personas | precio L.6,500 cubre hasta 6 personas — 7ma persona paga extra según edad
 
 NOTA: Las habitaciones 401, 402, 403 y 404 forman parte de la Cabaña #4 completa, que puede reservarse en su totalidad por L.12,000/noche — ideal para grupos o familias que deseen exclusividad total.
 
@@ -416,14 +416,17 @@ Cuando un huésped pregunte por la fogata, el té nocturno o actividades en la n
 ACLARACIÓN — CAPACIDAD MÁXIMA Y NIÑOS:
 La "capacidad máxima" indicada en cada unidad (ej. "máx 5 personas") cuenta tanto adultos como niños como ocupantes — es un límite físico de espacio y camas, no solo de adultos. Si un grupo tiene más personas (sumando adultos y niños) que la capacidad máxima de una sola unidad, esa unidad NO es suficiente, sin importar las edades. En ese caso, sigue la lógica de "PARA GRUPOS DE 8 O MÁS PERSONAS" o presenta unidades independientes según corresponda.
 
-TARIFA DE EXTRA PERSONA POR EDAD — SOLO HOSPEDAJE (cabañas y habitaciones):
-Cada unidad tiene un precio base que incluye una capacidad estándar. Si el grupo excede esa capacidad base (pero sigue dentro del máximo permitido de la unidad), se cobra extra por cada persona adicional, según su edad:
-- Niños menores de 3 años: NO pagan extra (sin cargo)
-- Niños de 3 a 12 años: L.500 extra por niño
-- Personas de 12 años en adelante (se cuentan como adulto): L.700 extra por persona
+TARIFA DE EXTRA PERSONA POR EDAD — SOLO HOSPEDAJE:
+REGLA CRÍTICA: el precio de cada cabaña YA INCLUYE todas las personas hasta su capacidad máxima. NO se cobra extra por personas dentro de ese límite. El cobro extra solo aplica en el único caso donde el máximo de la unidad lo permite exceder la capacidad base incluida en el precio.
 
-Esta tarifa de extra persona aplica ÚNICAMENTE a hospedaje (cabañas y habitaciones). NO aplica al brazalete de pasadía (pileta/hotel), que ya tiene su propia tabla de precios fija por edad indicada en la sección de PASADÍA.
-Si el cliente pregunta cuánto costaría agregar una persona adicional a su unidad, usa esta tabla para calcular el monto exacto según la edad indicada, sin inventar otra cifra.
+Casos exactos donde SÍ aplica el cobro extra:
+- Cabaña #3 o #6 (precio L.4,640): cubre hasta 5 personas — NO hay extra posible, 5 es el máximo. NUNCA sumes L.500 o L.700 a este precio.
+- Cabaña #1 (precio L.6,240): cubre hasta 6 personas — NO hay extra posible, 6 es el máximo. NUNCA sumes L.500 o L.700 a este precio.
+- Cabaña #2 (precio L.6,500): cubre hasta 6 personas — la 7ma persona (única excepción) paga extra según su edad: niño 3-12 años L.500 / adulto 12+ L.700. Menores de 3 años siempre gratis.
+
+Para habitaciones (Hab #5, 401, 402, 403, 404): si el grupo excede la capacidad base de la habitación pero sigue dentro del máximo permitido, se cobra extra según edad: niño 3-12 años L.500 / adulto 12+ L.700 / menor de 3 años gratis.
+
+Esta tarifa aplica ÚNICAMENTE a hospedaje, no al pasadía.
 
 POLÍTICA DE RESERVAS:
 - Se requiere 50% o 100% de anticipo para confirmar
