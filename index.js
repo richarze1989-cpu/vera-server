@@ -411,7 +411,7 @@ ALOJAMIENTOS — HABITACIONES (diseñadas para parejas):
 
 ALOJAMIENTOS — CABAÑAS:
 - Cabaña #3: cama queen + litera + sofácama + escritorio + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,900/noche (3 personas) — L.4,640/noche (4-5 personas) | máx 5 personas | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
-- Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,900/noche (3 personas) — L.4,640/noche (4-5 personas) | máx 5 personas | capacidad base: 3 personas
+- Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,900/noche (3 personas) — L.4,640/noche (4-5 personas) | máx 5 personas | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
 - Cabaña #1: 2 camas queen + litera + sofácama + 2 habitaciones + deck en porche + terraza con gran vista en segundo nivel | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,240/noche | máx 6 personas | precio L.6,240 cubre hasta 6 personas — sin cargo extra posible
 - Cabaña #2: habitación privada con cama queen + ático con 2 camas matrimoniales + sofácama + sala + terraza + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,500/noche | máx 7 personas | precio L.6,500 cubre hasta 6 personas — 7ma persona paga extra según edad
 
@@ -537,20 +537,26 @@ POSTRES:
 - Postre del Día L.90 | Gelatina L.45
 
 MENÚ DEL RESTAURANTE — INSTRUCCIÓN PARA VERA:
-Cuando el cliente pregunte por el menú, la carta o los precios del restaurante/kiosko, puedes compartir la información de la sección correspondiente directamente. Si el cliente pregunta por fotos del menú o de la comida, usa el link del catálogo completo indicado en "CATÁLOGO DE FOTOS — AVISO TEMPORAL" más abajo.
+Cuando el cliente pregunte por el menú, la carta o los precios del restaurante/kiosko, comparte la información de la sección correspondiente directamente. Si el cliente pregunta por fotos del menú o de la comida, comparte el catálogo usando el mensaje de la sección FOTOS más abajo.
 
 EXPERIENCIAS: Sesiones fotográficas L.1,000 (jardines, lago, caballos, arquitectura alpina). Eventos: bodas, quinceañeras, propuestas de matrimonio, reuniones familiares.
 
-CATÁLOGO DE FOTOS — AVISO TEMPORAL, MUY IMPORTANTE:
-Los links directos a fotos de productos específicos están temporalmente fuera de servicio (problema técnico en revisión). Mientras se resuelve, cuando el cliente pida fotos de cualquier cosa (una cabaña en particular, el restaurante, el menú, jardines, piscina, eventos, etc.) SIEMPRE comparte el link del catálogo completo — nunca un link de producto individual — con este mensaje exacto:
+FOTOS DE CABAÑAS Y HABITACIONES:
+Cuando el cliente pida fotos, imágenes o videos de cualquier cabaña, habitación o área de la finca:
 
-"¡Con gusto! Estamos solventando un pequeño inconveniente técnico con los enlaces directos a cada foto 🙏 Mientras tanto, puedes ver todas nuestras opciones — cabañas, habitaciones, restaurante, jardines y más — entrando directo a nuestro catálogo completo aquí:
+1. Envía el catálogo completo: https://wa.me/c/50495812311
+2. Usa un tono cálido y breve, máximo 3 líneas.
+3. NUNCA menciones inconvenientes técnicos, problemas con enlaces ni te disculpes por las fotos. Presenta el catálogo como la forma normal de ver todo.
+4. Cierra invitando al cliente a decirte qué cabaña o habitación le interesa, para darle los detalles.
+5. Si el cliente pide fotos de una unidad específica (por ejemplo "Cabaña #2" o "Habitación 401"), envía el mismo catálogo y descríbela brevemente usando solo la información oficial. No inventes características.
+6. No uses asteriscos dobles ni símbolos de formato.
+
+Ejemplo de respuesta:
+"¡Con gusto! 🌿 Aquí puedes ver todas nuestras cabañas, habitaciones, restaurante y jardines:
 
 📸 https://wa.me/c/50495812311
 
-Cualquier duda con gusto te ayudo. 🌿"
-
-No hagas preguntas adicionales después de compartir este mensaje.
+Cuéntame cuál te llamó la atención y te doy los detalles."
 
 ATRACCIONES CERCANAS — GUÍA PARA HUÉSPEDES:
 Cuando un huésped pregunte qué puede hacer en los alrededores, qué hay cerca, o qué visitar durante su estadía, comparte esta información de forma cálida y personalizada. Usa siempre los tiempos exactos de la tabla de DISTANCIAS Y TIEMPOS DE VIAJE indicada arriba — nunca un número distinto.
@@ -630,8 +636,6 @@ app.post('/chatwoot-webhook', async (req, res) => {
     console.log(`📩 Mensaje de Chatwoot (conv ${conversationId}): ${text}`);
     const key = `conv_${conversationId}`;
 
-    // Si el caché no existe (proceso recién iniciado o conversación expirada),
-    // carga el historial completo desde Chatwoot antes de continuar — await completo
     if (!conversaciones[key]) {
       const historialPrevio = await cargarHistorialDesdeChatwoot(conversationId);
       conversaciones[key] = {
@@ -640,7 +644,6 @@ app.post('/chatwoot-webhook', async (req, res) => {
       };
     }
 
-    // Actualizar timestamp de actividad en el caché
     conversaciones[key].ultimaActividad = Date.now();
 
     const esNuevoCliente = conversaciones[key].mensajes.length === 0;
@@ -649,7 +652,6 @@ app.post('/chatwoot-webhook', async (req, res) => {
       ? SYSTEM_PROMPT + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
       : SYSTEM_PROMPT;
 
-    // Agregar mensaje del cliente al caché
     conversaciones[key].mensajes.push({ role: 'user', content: text });
 
     if (from) {
@@ -657,7 +659,6 @@ app.post('/chatwoot-webhook', async (req, res) => {
       if (detectarConsultaDisponibilidad(text)) await enviarAlertaDisponibilidad(from, obtenerResumen(conversaciones[key].mensajes));
     }
 
-    // Aplicar ventana de contexto (máx 40 mensajes) antes de enviar al modelo
     const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
 
     const claudeResponse = await axios.post(
@@ -680,16 +681,12 @@ app.post('/chatwoot-webhook', async (req, res) => {
     conversaciones[key].ultimaActividad = Date.now();
     console.log(`💬 Vera responde: ${reply}`);
 
-    // Dividir por ---SPLIT--- antes de guardar en historial y enviar
     const partes = reply.split('---SPLIT---').map(p => p.trim()).filter(p => p.length > 0);
 
-    // Guardar cada parte como entrada separada en el historial — así el contexto
-    // refleja exactamente lo que el cliente recibió, sin el marcador técnico
     for (const parte of partes) {
       conversaciones[key].mensajes.push({ role: 'assistant', content: parte });
     }
 
-    // Enviar cada parte secuencialmente con su propio delay
     for (let i = 0; i < partes.length; i++) {
       const delay = calcularDelay(partes[i]);
       console.log(`⏳ Esperando ${delay / 1000}s antes de enviar parte ${i + 1}/${partes.length}`);
