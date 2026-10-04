@@ -214,11 +214,17 @@ const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto'
 const MES_NUM = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6, julio:7, agosto:8, septiembre:9, setiembre:9, octubre:10, noviembre:11, diciembre:12 };
 
 // Texto que se agrega al prompt en cada turno: qué fechas se consultaron realmente.
+function lineaDepositos(c) {
+  const ops = (c.opciones || []).filter(o => o.total !== null && o.total !== undefined);
+  if (!ops.length) return '';
+  return ' Depósito del 50% por opción (usa estos montos, no los calcules): ' + ops.map(o => `${o.nombre} L.${Math.round(Number(o.total) / 2).toLocaleString('en-US')} (total L.${Number(o.total).toLocaleString('en-US')})`).join('; ') + '.';
+}
+
 function estadoConsulta(c) {
   if (!c || !c.ok) {
     return '\n\nESTADO DE CONSULTAS EN ESTA CONVERSACIÓN: todavía NO has consultado el motor. No afirmes disponibilidad hasta llamar a la herramienta.';
   }
-  return `\n\nESTADO DE CONSULTAS EN ESTA CONVERSACIÓN: tu última consulta al motor fue llegada ${c.llegada}, salida ${c.salida} (${c.noches} noche${c.noches === 1 ? '' : 's'}), ${c.adultos} adulto(s) y ${c.ninos} niño(s). Solo esas fechas y ese número de personas están verificados. Si el cliente menciona otras fechas, otra duración u otro número de personas, DEBES llamar de nuevo a la herramienta antes de afirmar disponibilidad o dar totales.`;
+  return `\n\nESTADO DE CONSULTAS EN ESTA CONVERSACIÓN: tu última consulta al motor fue llegada ${c.llegada}, salida ${c.salida} (${c.noches} noche${c.noches === 1 ? '' : 's'}), ${c.adultos} adulto(s) y ${c.ninos} niño(s). Solo esas fechas y ese número de personas están verificados. Si el cliente menciona otras fechas, otra duración u otro número de personas, DEBES llamar de nuevo a la herramienta antes de afirmar disponibilidad o dar totales.${lineaDepositos(c)}`;
 }
 
 // ¿La respuesta afirma disponibilidad para fechas que NO coinciden con la última consulta?
@@ -258,7 +264,9 @@ Menos de 3 días o no-show — sin reembolso. Si desea reagendar, aplica un carg
 
 En caso de fuerza mayor, cada situación se evalúa de forma individual. 🌿`;
 
-const CIERRE_ADMINISTRADORA = 'Cualquier duda o detalle adicional, nuestra administradora se lo aclarará con gusto antes de confirmar su reserva. 🌿';
+const CIERRE_ADMINISTRADORA = 'Para reservar se solicita un depósito del 50% del total de la estadía. Cualquier duda o detalle adicional, nuestra administradora se lo aclarará con gusto antes de confirmar su reserva. 🌿';
+
+const PROCESO_RESERVA = `Así funciona su reserva: con un depósito del 50% del total de la estadía se realiza su reserva. Nuestra administradora le compartirá los datos para realizarlo y confirmará su reserva al recibirlo. 🌿`;
 
 // Garantiza el trato de "usted" aunque el modelo se deslice al "tú".
 function aUsted(t) {
@@ -438,7 +446,7 @@ FLUJO PARA RESERVAS:
 La administradora SIEMPRE confirma las reservas, porque hay detalles que deben aclararse antes. Vera nunca confirma una reserva.
 Cuando el cliente indique que quiere reservar o confirmar, asegúrate de tener: fechas, número de personas y alojamiento de interés (el nombre es opcional, pídelo una sola vez de forma casual). Si aún no consultaste disponibilidad para esas fechas, hazlo primero con la herramienta. Si el cliente aún no ha visto precios u opciones, muéstraselos primero.
 Una vez que tengas los datos, responde SIEMPRE en 2 partes con ---SPLIT--- (la política de cancelación es OBLIGATORIA; NO la omitas ni la pospongas para después del traspaso):
-Parte 1: resumen breve (alojamiento, fechas, número de personas, total estándar de la estadía), la aclaración de que la reserva se confirma con la administradora, y la política de cancelación completa:
+Parte 1: resumen breve (alojamiento, fechas, número de personas, total estándar de la estadía y el monto del depósito del 50%), la aclaración de que la reserva se confirma con la administradora, y la política de cancelación completa:
 "Para que tenga todo claro antes de reservar, esta es nuestra política de cancelación:
 
 Con más de 7 días de anticipación — puede reagendar sin costo o recibir un reembolso del 80%.
@@ -450,8 +458,11 @@ Parte 2: el mensaje de traspaso a la administradora (con el orden obligatorio in
 Solo si el cliente NO ha dicho su nombre en la conversación, pídelo al final de la parte 2 en una sola línea; si ya lo dijo, no lo pidas. Esta secuencia (resumen, política y traspaso) se envía una sola vez por conversación.
 Si el cliente ya recibió la política y el traspaso en esta conversación, no los repitas; solo ofrece el enlace y el número en una línea.
 
+PROCESO DE RESERVA (explícalo siempre que el cliente quiera reservar o pregunte cómo se reserva, cómo se paga o cuánto debe depositar):
+Con un depósito del 50% del total de la estadía se realiza la reserva. La administradora comparte los datos para hacer el depósito y confirma la reserva cuando lo recibe. Nunca inventes datos bancarios, números de cuenta ni plazos: esos datos los da únicamente la administradora. Si el cliente prefiere pagar el 100%, indícale que también es posible y que la administradora lo coordina. Cuando tengas el monto del depósito en el ESTADO DE CONSULTAS, indícalo (por ejemplo: "el depósito del 50% sería de L.3,000").
+
 FLUJO PARA DEPÓSITO O PAGO:
-Cuando el cliente indique que está listo para pagar o depositar, usa el mensaje de traspaso indicado arriba.
+Cuando el cliente indique que está listo para pagar o depositar, explica brevemente el proceso (depósito del 50%, la administradora comparte los datos y confirma al recibirlo) y usa el mensaje de traspaso indicado arriba.
 
 PASADÍA — MUY IMPORTANTE:
 Cuando el cliente pregunte por pasadía, visita de día, o pasar el día sin hospedarse, responde con esta información — NO ofrezcas tarifas de hospedaje:
@@ -907,7 +918,12 @@ app.post('/chatwoot-webhook', async (req, res) => {
     const rxPolitica = /pol[ií]tica de cancelaci[oó]n/i;
     const yaPolitica = conversaciones[key].mensajes.slice(-12).some(m => m.role === 'assistant' && typeof m.content === 'string' && rxPolitica.test(m.content)) || partes.some(p => rxPolitica.test(p));
     const idxTraspaso = partes.findIndex(p => p.includes('wa.me/50495812311'));
-    if (idxTraspaso >= 0 && !yaPolitica) partes.splice(idxTraspaso, 0, POLITICA_CANCELACION);
+    const rxProceso = /confirmar[aá] su reserva al recibirlo/i;
+    const yaProceso = conversaciones[key].mensajes.slice(-12).some(m => m.role === 'assistant' && typeof m.content === 'string' && rxProceso.test(m.content)) || partes.some(p => rxProceso.test(p));
+    const insertar = [];
+    if (idxTraspaso >= 0 && !yaProceso) insertar.push(PROCESO_RESERVA);
+    if (idxTraspaso >= 0 && !yaPolitica) insertar.push(POLITICA_CANCELACION);
+    if (insertar.length) partes.splice(idxTraspaso, 0, ...insertar);
 
     for (const parte of partes) {
       conversaciones[key].mensajes.push({ role: 'assistant', content: parte });
