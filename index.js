@@ -423,6 +423,7 @@ Reglas al usar el resultado:
 - Aun cuando haya disponibilidad, no la garantices: aclara que la reserva queda confirmada cuando la administradora la confirma.
 - CIERRE OBLIGATORIO en toda respuesta con disponibilidad o precios: una frase cálida que indique que cualquier duda, detalle o solicitud especial (precio especial, descuento por varias noches, cargo adicional, mascotas, decoración, horarios) se la aclara y aprueba nuestra administradora personalmente antes de confirmar la reserva. Ejemplo: "Cualquier duda o detalle adicional, nuestra administradora se lo aclarará con gusto antes de confirmar su reserva. 🌿" No la repitas idéntica en mensajes consecutivos.
 - FORMA, SIN EXCEPCIÓN: trata siempre de "usted" a quien escribe, incluso cuando habla de otra persona (su hermano, su esposa, un amigo). Nunca uses "tú", "te", "tu", "tienes", "quieres", "puedes". Di "su hermano", "le comparto", "si desea", "su reserva". Incorrecto: "te paso su contacto para tu hermano". Correcto: "con gusto le comparto el contacto de nuestra administradora, quien atenderá la solicitud de su hermano". No uses asteriscos ni negritas ni viñetas. No digas "tu opción elegida": el cliente aún no ha elegido; presenta las opciones. Máximo 2 emojis por mensaje.
+- NO termines preguntando "¿confirma esta reserva?" ni nada que sugiera que Vera o el cliente confirman: la reserva la confirma únicamente la administradora. Si necesitas una pregunta final, que sea sobre un dato que falta (por ejemplo el nombre) o sobre si desea ver otras opciones.
 - NUNCA pidas un dato que el cliente ya te dio en la conversación (nombre, fechas, número de personas, alojamiento). Si ya dijo el nombre, úsalo ("Será un placer atenderle, Fernando").
 - Solo digas "tenemos disponibilidad" si en ESTA conversación consultaste la herramienta para esas fechas exactas y salió disponible. Si las fechas cambiaron, consulta de nuevo antes de afirmar nada.
 - Para una solicitud de descuento no uses la palabra "negociar": di que la administradora lo "revisará" o "evaluará".
@@ -894,9 +895,9 @@ app.post('/chatwoot-webhook', async (req, res) => {
 
     const partes = reply.split('---SPLIT---').map(p => p.trim()).filter(p => p.length > 0);
 
-    // La política de cancelación SIEMPRE se envía antes del traspaso a la administradora (una sola vez por conversación).
+    // La política de cancelación SIEMPRE se envía antes del traspaso a la administradora, salvo que ya esté en los últimos 12 mensajes (evita repetirla seguida).
     const rxPolitica = /pol[ií]tica de cancelaci[oó]n/i;
-    const yaPolitica = conversaciones[key].mensajes.some(m => m.role === 'assistant' && typeof m.content === 'string' && rxPolitica.test(m.content)) || partes.some(p => rxPolitica.test(p));
+    const yaPolitica = conversaciones[key].mensajes.slice(-12).some(m => m.role === 'assistant' && typeof m.content === 'string' && rxPolitica.test(m.content)) || partes.some(p => rxPolitica.test(p));
     const idxTraspaso = partes.findIndex(p => p.includes('wa.me/50495812311'));
     if (idxTraspaso >= 0 && !yaPolitica) partes.splice(idxTraspaso, 0, POLITICA_CANCELACION);
 
