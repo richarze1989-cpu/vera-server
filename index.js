@@ -228,29 +228,51 @@ function estadoConsulta(c) {
 }
 
 // ¿La respuesta afirma disponibilidad para fechas que NO coinciden con la última consulta?
+function rangosDeFechas(reply) {
+  const rx = new RegExp('(\\d{1,2})\\s+al\\s+(\\d{1,2})\\s+de\\s+(' + MESES.join('|') + ')', 'gi');
+  const out = []; let m;
+  while ((m = rx.exec(reply)) !== null) out.push({ d1: Number(m[1]), d2: Number(m[2]), mes: MES_NUM[m[3].toLowerCase()] });
+  return out;
+}
+
 function afirmaDisponibilidadSinVerificar(reply, c) {
-  const afirma = /(tenemos|hay|contamos con|queda(n)?|est[aá](n)?|seguimos con)\s+(la\s+)?(disponibilidad|disponibles?|espacio)/i.test(reply);
-  if (!afirma) return false;
+  const rangos = rangosDeFechas(reply);
+  const fuerte = /(tenemos|hay|contamos con|queda(n)?|est[aá](n)?|seguimos con)\s+(la\s+)?(disponibilidad|disponibles?|espacio)|funciona.{0,40}disponibilidad|disponibilidad.{0,30}(funciona|perfecto|sin problema)|(sí|si)\s+(hay|tenemos|podemos)/i.test(reply);
+  const debil = rangos.length > 0 && /disponib|funciona|libre|espacio/i.test(reply);
+  if (!fuerte && !debil) return false;
   if (!c || !c.ok) return true;
   const dIn = Number(c.llegada.slice(8, 10)), dOut = Number(c.salida.slice(8, 10));
   const mIn = Number(c.llegada.slice(5, 7));
-  const rx = new RegExp('(\\d{1,2})\\s+al\\s+(\\d{1,2})\\s+de\\s+(' + MESES.join('|') + ')', 'gi');
-  let m;
-  while ((m = rx.exec(reply)) !== null) {
-    const d1 = Number(m[1]), d2 = Number(m[2]), mes = MES_NUM[m[3].toLowerCase()];
-    if (d1 !== dIn || d2 !== dOut || mes !== mIn) return true;
-  }
-  return false;
+  return rangos.some(r => r.d1 !== dIn || r.d2 !== dOut || r.mes !== mIn);
+}
+
+// La estadía mínima de 2 noches aplica SOLO a llegadas del 7 al 10 de octubre de 2026.
+function minimaMalAplicada(reply) {
+  if (!/estad[ií]a m[ií]nima/i.test(reply)) return false;
+  const rangos = rangosDeFechas(reply);
+  const tocaFeriado = rangos.some(r => r.mes === 10 && r.d1 <= 10 && (r.d2 - 1) >= 7);
+  const sueltas = [...reply.matchAll(/\b(\d{1,2})\s+de\s+octubre\b/gi)].map(x => Number(x[1])).some(d => d >= 7 && d <= 10);
+  return !(tocaFeriado || sueltas);
 }
 
 // Segunda ronda forzada: obliga a consultar de nuevo antes de enviar.
 async function asegurarCoherencia(system, mensajes, reply, ctx) {
-  if (!afirmaDisponibilidadSinVerificar(reply, ctx.ultimaConsulta)) return reply;
-  console.log('⚠️ Respuesta afirma disponibilidad sin consulta para esas fechas — se fuerza nueva consulta');
+  const sinVerificar = afirmaDisponibilidadSinVerificar(reply, ctx.ultimaConsulta);
+  const minimaMal = minimaMalAplicada(reply);
+  if (!sinVerificar && !minimaMal) return reply;
+  const notas = [];
+  if (sinVerificar) {
+    console.log('⚠️ Respuesta afirma disponibilidad sin consulta para esas fechas — se fuerza nueva consulta');
+    notas.push('Tu respuesta anterior afirma o sugiere disponibilidad para fechas o un número de personas que NO coinciden con tu última consulta al motor. Llama ahora a consultar_disponibilidad con las fechas y el número de personas que el cliente realmente indicó (si aún no sabes cuántas personas son, pregúntalo en vez de afirmar nada) y rehaz tu respuesta usando únicamente ese resultado.');
+  }
+  if (minimaMal) {
+    console.log('⚠️ Respuesta aplica estadía mínima fuera del feriado — se corrige');
+    notas.push('Tu respuesta anterior aplicó una estadía mínima de 2 noches, pero esa regla aplica ÚNICAMENTE a llegadas del 7 al 10 de octubre de 2026. Las fechas del cliente NO están en ese período: NO existe estadía mínima para ellas (una sola noche es válida). Rehaz tu respuesta sin mencionar estadía mínima.');
+  }
   const extra = [
     ...mensajes,
     { role: 'assistant', content: reply },
-    { role: 'user', content: '[Nota interna del sistema, el cliente no la ve] Tu respuesta anterior afirma disponibilidad para fechas o un número de personas que NO coinciden con tu última consulta al motor. Llama ahora a consultar_disponibilidad con las fechas y el número de personas que el cliente realmente indicó y rehaz tu respuesta completa usando únicamente ese resultado. Responde al cliente directamente, sin mencionar esta nota.' }
+    { role: 'user', content: '[Nota interna del sistema, el cliente no la ve] ' + notas.join(' ') + ' Responde al cliente directamente, sin mencionar esta nota.' }
   ];
   const nueva = await llamarClaude(system, extra, ctx);
   return nueva || reply;
@@ -631,7 +653,7 @@ Para las fechas del miércoles 7 al sábado 10 de octubre de 2026, aplica una es
 Si el cliente consulta disponibilidad o quiere reservar para esas fechas con solo 1 noche, responde:
 "Para el feriado morazánico manejamos una estadía mínima de 2 noches — es nuestra política para esas fechas por la alta demanda. Si gusta ajustar sus fechas, con gusto le buscamos la mejor opción disponible. 🌿"
 
-Esta regla aplica únicamente para ese feriado. Fuera de esas fechas, no hay estadía mínima.
+Esta regla aplica únicamente para llegadas del 7 al 10 de octubre de 2026. Fuera de esas fechas NO hay estadía mínima: por ejemplo, una sola noche del 17 al 18 de octubre, del 16 al 17 o del 24 al 25 es perfectamente válida. Nunca digas que "fechas cercanas al feriado" tienen mínimo de noches.
 
 POLÍTICA DE RESERVAS:
 - Se requiere 50% o 100% de anticipo para confirmar
