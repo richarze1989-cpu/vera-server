@@ -209,6 +209,46 @@ async function llamarClaude(system, mensajes, ctx) {
   return 'Voy a confirmar ese detalle con nuestro equipo para darle la información correcta. 🌿';
 }
 
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','setiembre','octubre','noviembre','diciembre'];
+const MES_NUM = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6, julio:7, agosto:8, septiembre:9, setiembre:9, octubre:10, noviembre:11, diciembre:12 };
+
+// Texto que se agrega al prompt en cada turno: qué fechas se consultaron realmente.
+function estadoConsulta(c) {
+  if (!c || !c.ok) {
+    return '\n\nESTADO DE CONSULTAS EN ESTA CONVERSACIÓN: todavía NO has consultado el motor. No afirmes disponibilidad hasta llamar a la herramienta.';
+  }
+  return `\n\nESTADO DE CONSULTAS EN ESTA CONVERSACIÓN: tu última consulta al motor fue llegada ${c.llegada}, salida ${c.salida} (${c.noches} noche${c.noches === 1 ? '' : 's'}), ${c.adultos} adulto(s) y ${c.ninos} niño(s). Solo esas fechas y ese número de personas están verificados. Si el cliente menciona otras fechas, otra duración u otro número de personas, DEBES llamar de nuevo a la herramienta antes de afirmar disponibilidad o dar totales.`;
+}
+
+// ¿La respuesta afirma disponibilidad para fechas que NO coinciden con la última consulta?
+function afirmaDisponibilidadSinVerificar(reply, c) {
+  const afirma = /(tenemos|hay|contamos con|queda(n)?|est[aá](n)?|seguimos con)\s+(la\s+)?(disponibilidad|disponibles?|espacio)/i.test(reply);
+  if (!afirma) return false;
+  if (!c || !c.ok) return true;
+  const dIn = Number(c.llegada.slice(8, 10)), dOut = Number(c.salida.slice(8, 10));
+  const mIn = Number(c.llegada.slice(5, 7));
+  const rx = new RegExp('(\\d{1,2})\\s+al\\s+(\\d{1,2})\\s+de\\s+(' + MESES.join('|') + ')', 'gi');
+  let m;
+  while ((m = rx.exec(reply)) !== null) {
+    const d1 = Number(m[1]), d2 = Number(m[2]), mes = MES_NUM[m[3].toLowerCase()];
+    if (d1 !== dIn || d2 !== dOut || mes !== mIn) return true;
+  }
+  return false;
+}
+
+// Segunda ronda forzada: obliga a consultar de nuevo antes de enviar.
+async function asegurarCoherencia(system, mensajes, reply, ctx) {
+  if (!afirmaDisponibilidadSinVerificar(reply, ctx.ultimaConsulta)) return reply;
+  console.log('⚠️ Respuesta afirma disponibilidad sin consulta para esas fechas — se fuerza nueva consulta');
+  const extra = [
+    ...mensajes,
+    { role: 'assistant', content: reply },
+    { role: 'user', content: '[Nota interna del sistema, el cliente no la ve] Tu respuesta anterior afirma disponibilidad para fechas o un número de personas que NO coinciden con tu última consulta al motor. Llama ahora a consultar_disponibilidad con las fechas y el número de personas que el cliente realmente indicó y rehaz tu respuesta completa usando únicamente ese resultado. Responde al cliente directamente, sin mencionar esta nota.' }
+  ];
+  const nueva = await llamarClaude(system, extra, ctx);
+  return nueva || reply;
+}
+
 async function enviarAlerta(numeroCliente, resumen, consulta) {
   const mensaje = `🔔 *ALERTA DE RESERVA — Finca Las Vírgenes*\n\nUn cliente está listo para reservar.\n\n*Número:* +${numeroCliente}\n\n*Resumen:*\n${resumen}${lineaConsulta(consulta)}\n\nPor favor contáctalo para aclarar detalles, confirmar la reserva y aprobar cualquier precio especial, descuento o cobro extra.`;
   for (const numero of NUMEROS_ALERTA) {
@@ -811,7 +851,9 @@ app.post('/chatwoot-webhook', async (req, res) => {
 
     const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
 
-    let reply = await llamarClaude(systemConSaludo, mensajesParaClaude, conversaciones[key]);
+    const systemFinal = systemConSaludo + estadoConsulta(conversaciones[key].ultimaConsulta);
+    let reply = await llamarClaude(systemFinal, mensajesParaClaude, conversaciones[key]);
+    reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
     // Los canales (WhatsApp/Instagram/Facebook) no muestran bien los asteriscos.
     reply = reply.replace(/\*+/g, '');
     if (!reply) throw new Error('Respuesta vacía de Claude');
