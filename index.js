@@ -846,7 +846,7 @@ app.post('/chatwoot-webhook', async (req, res) => {
 
     if (from) {
       if (detectarIntencionDeposito(text)) await enviarAlerta(from, obtenerResumen(conversaciones[key].mensajes), conversaciones[key].ultimaConsulta);
-      if (detectarConsultaDisponibilidad(text)) await enviarAlertaDisponibilidad(from, obtenerResumen(conversaciones[key].mensajes), conversaciones[key].ultimaConsulta);
+      // Consultas de disponibilidad: Vera las responde sola (motor). Karen solo recibe alerta cuando el cliente quiere reservar.
     }
 
     const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
