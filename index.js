@@ -199,6 +199,7 @@ async function llamarClaude(system, mensajes, ctx) {
         salida = await consultarDisponibilidad(b.input || {});
         console.log(`🔎 Disponibilidad ${JSON.stringify(b.input)} -> ${salida.ok ? (salida.opciones || []).length + ' opciones' : 'error: ' + salida.error}`);
         if (salida.ok) ctx.ultimaConsulta = salida;
+        ctx.consultoEsteTurno = true;
       } else {
         salida = { ok: false, error: 'Herramienta desconocida.' };
       }
@@ -247,6 +248,32 @@ async function asegurarCoherencia(system, mensajes, reply, ctx) {
   ];
   const nueva = await llamarClaude(system, extra, ctx);
   return nueva || reply;
+}
+
+const POLITICA_CANCELACION = `Para que tenga todo claro antes de reservar, esta es nuestra política de cancelación:
+
+Con más de 7 días de anticipación — puede reagendar sin costo o recibir un reembolso del 80%.
+Entre 3 y 7 días — un reagendamiento gratuito o reembolso del 50%.
+Menos de 3 días o no-show — sin reembolso. Si desea reagendar, aplica un cargo de L.500.
+
+En caso de fuerza mayor, cada situación se evalúa de forma individual. 🌿`;
+
+const CIERRE_ADMINISTRADORA = 'Cualquier duda o detalle adicional, nuestra administradora se lo aclarará con gusto antes de confirmar su reserva. 🌿';
+
+// Garantiza el trato de "usted" aunque el modelo se deslice al "tú".
+function aUsted(t) {
+  const verbos = { quieres: 'desea', puedes: 'puede', tienes: 'tiene', necesitas: 'necesita', prefieres: 'prefiere', buscas: 'busca', piensas: 'piensa', deseas: 'desea', estás: 'está', eres: 'es', vas: 'va', sabes: 'sabe', confirmes: 'confirme', indiques: 'indique', elijas: 'elija' };
+  let r = t
+    .replace(/\bTú\b/g, 'Usted').replace(/\btú\b/g, 'usted')
+    .replace(/\bTu\b/g, 'Su').replace(/\btu\b/g, 'su')
+    .replace(/\bTus\b/g, 'Sus').replace(/\btus\b/g, 'sus')
+    .replace(/\bTe\b/g, 'Le').replace(/\bte\b/g, 'le')
+    .replace(/\b(para|con|de) ti\b/g, '$1 usted');
+  for (const [k, v] of Object.entries(verbos)) {
+    r = r.replace(new RegExp('\\b' + k + '\\b', 'g'), v)
+         .replace(new RegExp('\\b' + k.charAt(0).toUpperCase() + k.slice(1) + '\\b', 'g'), v.charAt(0).toUpperCase() + v.slice(1));
+  }
+  return r;
 }
 
 async function enviarAlerta(numeroCliente, resumen, consulta) {
@@ -851,16 +878,27 @@ app.post('/chatwoot-webhook', async (req, res) => {
 
     const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
 
+    conversaciones[key].consultoEsteTurno = false;
     const systemFinal = systemConSaludo + estadoConsulta(conversaciones[key].ultimaConsulta);
     let reply = await llamarClaude(systemFinal, mensajesParaClaude, conversaciones[key]);
     reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
     // Los canales (WhatsApp/Instagram/Facebook) no muestran bien los asteriscos.
     reply = reply.replace(/\*+/g, '');
+    reply = aUsted(reply);
+    if (conversaciones[key].consultoEsteTurno && !/administradora/i.test(reply)) {
+      reply = reply.trimEnd() + '\n\n' + CIERRE_ADMINISTRADORA;
+    }
     if (!reply) throw new Error('Respuesta vacía de Claude');
     conversaciones[key].ultimaActividad = Date.now();
     console.log(`💬 Vera responde: ${reply}`);
 
     const partes = reply.split('---SPLIT---').map(p => p.trim()).filter(p => p.length > 0);
+
+    // La política de cancelación SIEMPRE se envía antes del traspaso a la administradora (una sola vez por conversación).
+    const rxPolitica = /pol[ií]tica de cancelaci[oó]n/i;
+    const yaPolitica = conversaciones[key].mensajes.some(m => m.role === 'assistant' && typeof m.content === 'string' && rxPolitica.test(m.content)) || partes.some(p => rxPolitica.test(p));
+    const idxTraspaso = partes.findIndex(p => p.includes('wa.me/50495812311'));
+    if (idxTraspaso >= 0 && !yaPolitica) partes.splice(idxTraspaso, 0, POLITICA_CANCELACION);
 
     for (const parte of partes) {
       conversaciones[key].mensajes.push({ role: 'assistant', content: parte });
