@@ -887,7 +887,15 @@ app.post('/chatwoot-webhook', async (req, res) => {
     reply = reply.replace(/\*+/g, '');
     reply = aUsted(reply);
     if (conversaciones[key].consultoEsteTurno && !/administradora/i.test(reply)) {
-      reply = reply.trimEnd() + '\n\n' + CIERRE_ADMINISTRADORA;
+      // Si el mensaje termina en una pregunta, el cierre va ANTES de ella (la pregunta debe ser lo último que lea el cliente).
+      const base = reply.trimEnd();
+      const idxUltimo = base.lastIndexOf('\n\n');
+      const ultimoBloque = idxUltimo >= 0 ? base.slice(idxUltimo + 2) : '';
+      if (idxUltimo >= 0 && /\?\s*[^\w\s]*\s*$/.test(ultimoBloque) && !ultimoBloque.includes('---SPLIT---')) {
+        reply = base.slice(0, idxUltimo) + '\n\n' + CIERRE_ADMINISTRADORA + '\n\n' + ultimoBloque;
+      } else {
+        reply = base + '\n\n' + CIERRE_ADMINISTRADORA;
+      }
     }
     if (!reply) throw new Error('Respuesta vacía de Claude');
     conversaciones[key].ultimaActividad = Date.now();
