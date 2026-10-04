@@ -9,9 +9,13 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const CHATWOOT_API_TOKEN = process.env.CHATWOOT_API_TOKEN;
 const CHATWOOT_INBOX_ID = process.env.CHATWOOT_INBOX_ID;
-const CHATWOOT_URL = 'https://app.chatwoot.com';
+const CHATWOOT_URL = process.env.CHATWOOT_URL || 'https://app.chatwoot.com';
 const CHATWOOT_ACCOUNT_ID = '169097';
 const VERIFY_TOKEN = 'vera2024';
+// Motor de reservas (consulta de disponibilidad, solo lectura)
+const MOTOR_URL = (process.env.MOTOR_URL || '').replace(/\/+$/, '');
+const VERA_API_KEY = process.env.VERA_API_KEY;
+const ANTHROPIC_URL = process.env.ANTHROPIC_URL || 'https://api.anthropic.com/v1/messages';
 
 // Caché en RAM: { mensajes: [], ultimaActividad: timestamp }
 const conversaciones = {};
@@ -121,8 +125,92 @@ function obtenerResumen(historial) {
     .join('\n');
 }
 
-async function enviarAlerta(numeroCliente, resumen) {
-  const mensaje = `🔔 *ALERTA DE RESERVA — Finca Las Vírgenes*\n\nUn cliente está listo para reservar.\n\n*Número:* +${numeroCliente}\n\n*Resumen:*\n${resumen}\n\nPor favor contáctalo para confirmar disponibilidad y procesar la reserva.`;
+function fechaHoyHonduras() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tegucigalpa', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+const L = (n) => (n === null || n === undefined) ? 'a cotizar' : 'L.' + Number(n).toLocaleString('en-US');
+
+const HERRAMIENTAS = [{
+  name: 'consultar_disponibilidad',
+  description: 'Consulta en el motor de reservas de la finca qué alojamientos están libres para unas fechas y su precio estándar. Úsala cuando el cliente ya indicó fecha de llegada, fecha de salida y número de personas. Devuelve solo información; no reserva nada.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      check_in: { type: 'string', description: 'Fecha de llegada, formato AAAA-MM-DD' },
+      check_out: { type: 'string', description: 'Fecha de salida, formato AAAA-MM-DD (posterior a la llegada)' },
+      adultos: { type: 'integer', description: 'Número de adultos. Si el cliente da un total de personas sin edades, cuéntelas todas como adultos.' },
+      ninos: { type: 'integer', description: 'Número de niños (solo si el cliente lo indicó). Por defecto 0.' }
+    },
+    required: ['check_in', 'check_out', 'adultos']
+  }
+}];
+
+async function consultarDisponibilidad(args) {
+  if (!MOTOR_URL || !VERA_API_KEY) {
+    return { ok: false, error: 'Consulta no disponible por el momento.' };
+  }
+  try {
+    const r = await axios.get(`${MOTOR_URL}/api/bot/disponibilidad`, {
+      params: {
+        check_in: args.check_in,
+        check_out: args.check_out,
+        adults: Number.isInteger(args.adultos) ? args.adultos : 2,
+        children: Number.isInteger(args.ninos) ? args.ninos : 0
+      },
+      headers: { 'x-api-key': VERA_API_KEY },
+      timeout: 10000
+    });
+    return r.data;
+  } catch (err) {
+    const d = err.response?.data;
+    console.error('❌ Error consultando motor:', err.response?.status, d || err.message);
+    if (err.response?.status === 400 && d?.error) return { ok: false, error: d.error };
+    return { ok: false, error: 'Consulta no disponible por el momento.' };
+  }
+}
+
+// Resumen de la última consulta al motor, para las alertas a la administradora.
+function lineaConsulta(c) {
+  if (!c || !c.ok) return '';
+  const libres = (c.opciones || [])
+    .map(o => `${o.nombre} ${L(o.total)}${o.requiere_cotizacion ? ' (paquete, cotizar)' : ''}`)
+    .join('; ') || 'ninguna';
+  return `\n\n*Consulta al motor:* ${c.llegada} al ${c.salida} (${c.noches} noche${c.noches === 1 ? '' : 's'}), ${c.adultos} adulto(s), ${c.ninos} niño(s).\n*Libres (precio estándar):* ${libres}`;
+}
+
+async function llamarClaude(system, mensajes, ctx) {
+  const msgs = mensajes.map(m => ({ role: m.role, content: m.content }));
+  for (let ronda = 0; ronda < 4; ronda++) {
+    const r = await axios.post(
+      ANTHROPIC_URL,
+      { model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system, messages: msgs, tools: HERRAMIENTAS },
+      { headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' } }
+    );
+    const contenido = r.data.content || [];
+    if (r.data.stop_reason !== 'tool_use') {
+      return contenido.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    }
+    msgs.push({ role: 'assistant', content: contenido });
+    const resultados = [];
+    for (const b of contenido.filter(x => x.type === 'tool_use')) {
+      let salida;
+      if (b.name === 'consultar_disponibilidad') {
+        salida = await consultarDisponibilidad(b.input || {});
+        console.log(`🔎 Disponibilidad ${JSON.stringify(b.input)} -> ${salida.ok ? (salida.opciones || []).length + ' opciones' : 'error: ' + salida.error}`);
+        if (salida.ok) ctx.ultimaConsulta = salida;
+      } else {
+        salida = { ok: false, error: 'Herramienta desconocida.' };
+      }
+      resultados.push({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(salida), is_error: !salida.ok });
+    }
+    msgs.push({ role: 'user', content: resultados });
+  }
+  return 'Voy a confirmar ese detalle con nuestro equipo para darle la información correcta. 🌿';
+}
+
+async function enviarAlerta(numeroCliente, resumen, consulta) {
+  const mensaje = `🔔 *ALERTA DE RESERVA — Finca Las Vírgenes*\n\nUn cliente está listo para reservar.\n\n*Número:* +${numeroCliente}\n\n*Resumen:*\n${resumen}${lineaConsulta(consulta)}\n\nPor favor contáctalo para aclarar detalles, confirmar la reserva y aprobar cualquier precio especial, descuento o cobro extra.`;
   for (const numero of NUMEROS_ALERTA) {
     try {
       await axios.post(
@@ -137,8 +225,8 @@ async function enviarAlerta(numeroCliente, resumen) {
   }
 }
 
-async function enviarAlertaDisponibilidad(numeroCliente, resumen) {
-  const mensaje = `📅 *CONSULTA DE DISPONIBILIDAD — Finca Las Vírgenes*\n\nUn cliente pregunta por disponibilidad.\n\n*Número:* +${numeroCliente}\n\n*Resumen:*\n${resumen}\n\nPor favor verificar en Little Hotelier y confirmar al cliente.`;
+async function enviarAlertaDisponibilidad(numeroCliente, resumen, consulta) {
+  const mensaje = `📅 *CONSULTA DE DISPONIBILIDAD — Finca Las Vírgenes*\n\nUn cliente pregunta por disponibilidad.\n\n*Número:* +${numeroCliente}\n\n*Resumen:*\n${resumen}${lineaConsulta(consulta)}\n\nLa disponibilidad indicada proviene del motor de reservas. Por favor confirmar con el cliente.`;
   for (const numero of NUMEROS_ALERTA) {
     try {
       await axios.post(
@@ -220,7 +308,7 @@ IMPORTANTE:
 REGLA CLAVE — INFORMAR SIEMPRE PRIMERO:
 Vera está autorizada para brindar TODA la información de la finca: precios, habitaciones, cabañas, restaurante, eventos, experiencias, fotos, políticas, atracciones cercanas y cualquier consulta general.
 
-Vera NO está autorizada para confirmar reservas ni verificar disponibilidad en tiempo real (es decir, no puede decir "sí hay espacio" o "no hay espacio" para una fecha exacta). Esa verificación puntual la hace exclusivamente la administradora.
+Vera NO está autorizada para confirmar ni garantizar reservas: la confirmación siempre la hace la administradora. Vera SÍ puede informar disponibilidad y precio estándar, pero únicamente con la herramienta consultar_disponibilidad (ver DISPONIBILIDAD Y PRECIO CON LA HERRAMIENTA).
 
 MUY IMPORTANTE — NO CONFUNDIR "PRECIOS/INFORMACIÓN" CON "DISPONIBILIDAD":
 Estas son palabras y preguntas que SOLO buscan información — Vera responde directamente con precios y opciones, SIN pedir fechas y SIN redirigir:
@@ -255,24 +343,37 @@ https://wa.me/50495812311
 
 Le sugerimos indicarle: fechas, número de personas y alojamiento de preferencia."
 
-FLUJO PARA DISPONIBILIDAD (verificación real de fechas):
-Este flujo se activa SOLO cuando el cliente ya tiene fechas concretas en mente y pregunta explícitamente si hay espacio para esas fechas — DESPUÉS de que Vera ya le dio información de precios y opciones, o si el cliente va directo con fecha exacta.
+DISPONIBILIDAD Y PRECIO CON LA HERRAMIENTA:
+Cuando el cliente ya dio fecha de llegada, fecha de salida y número de personas, y quiere saber si hay espacio, USA la herramienta consultar_disponibilidad. Si falta alguno de esos tres datos, pídelo (uno a la vez). Interpreta las fechas con la fecha de hoy indicada al final de este prompt; si el cliente no dice el año, usa la próxima fecha futura que corresponda. La estadía máxima consultable es de 30 noches.
 
-Si el cliente solo menciona la palabra "disponibilidad" de forma genérica sin dar fechas exactas, Vera NO debe redirigir todavía — primero debe preguntar cuántas personas son y presentar las opciones con precios.
+Reglas al usar el resultado:
+- Informa SOLO lo que devuelve la herramienta. Nunca digas que hay o no hay espacio sin haberla consultado, ni inventes disponibilidad.
+- Presenta únicamente las unidades que aparecen en opciones. Si una unidad que normalmente recomendarías no aparece, no la menciones. Aplica las reglas de recomendación por número de personas (habitaciones solo para parejas, etc.) sobre las unidades disponibles.
+- El precio y el total de la herramienta son el precio ESTÁNDAR vigente. Si difieren de las tarifas escritas en este prompt, prevalece la herramienta. Indica siempre el total de la estadía y el número de noches, por ejemplo: "2 noches, total L.6,000".
+- Si requiere_cotizacion es true (paquetes como Cabaña #4 completa o Habitación #5 + Cabaña #6), preséntalo como tarifa referencial que la administradora confirmará. No lo des como precio final.
+- Si opciones viene vacío, di con delicadeza que para esas fechas no vemos disponibilidad en el sistema y ofrece revisar fechas cercanas (puedes volver a consultar con otras fechas). Si el cliente prefiere, ofrece el contacto de la administradora.
+- Si la herramienta devuelve un error de fechas o de datos, corrige con el cliente de forma amable. Si devuelve que la consulta no está disponible, usa el mensaje de traspaso a la administradora sin afirmar nada sobre disponibilidad.
+- Aun cuando haya disponibilidad, no la garantices: aclara que la reserva queda confirmada cuando la administradora la confirma.
 
-Cuando el cliente ya dio fecha exacta Y número de personas Y pregunta si hay espacio, usa el mensaje de traspaso indicado arriba.
+PRECIOS ESPECIALES, DESCUENTOS Y COBROS EXTRA — MANEJO PROFESIONAL:
+Vera comunica siempre el precio estándar y NUNCA negocia ni promete nada distinto. Vera no ofrece descuentos por varias noches, precios especiales, cortesías, cobros extra ni reducciones por su cuenta, ni los calcula.
+Si el cliente pide un descuento, un precio especial, una tarifa por varias noches, un cobro extra o una reducción, o menciona un caso fuera de lo estándar (mascotas, decoración, más personas de las permitidas, evento, llegada tardía, etc.), responde con calidez y claridad, sin sonar a negativa. Ejemplo: "Con gusto. Nuestro precio estándar para esas fechas es de L.X en total. Cualquier tarifa especial, descuento o cargo adicional lo evalúa y aprueba directamente nuestra administradora, quien le dará una respuesta clara antes de confirmar su reserva. 🌿" Luego usa el traspaso a la administradora.
+Nunca afirmes que un descuento "se puede" o "seguro se logra".
 
 FLUJO PARA RESERVAS:
-Cuando el cliente indique explícitamente que quiere reservar o confirmar, primero asegúrate de tener: nombre, fechas, número de personas y alojamiento de interés. Si el cliente aún no ha visto precios ni opciones, muéstraselos primero. Una vez que tengas todos los datos, usa el mensaje de traspaso indicado arriba.
-
-Después de enviar el traspaso, si el cliente responde confirmando que entendió (palabras como "está bien", "de acuerdo", "ok", "listo", "entendido", "sí"), responde con la política de cancelación:
+La administradora SIEMPRE confirma las reservas, porque hay detalles que deben aclararse antes. Vera nunca confirma una reserva.
+Cuando el cliente indique que quiere reservar o confirmar, asegúrate de tener: fechas, número de personas y alojamiento de interés (el nombre es opcional, pídelo una sola vez de forma casual). Si aún no consultaste disponibilidad para esas fechas, hazlo primero con la herramienta. Si el cliente aún no ha visto precios u opciones, muéstraselos primero.
+Una vez que tengas los datos, responde en 2 partes con ---SPLIT---:
+Parte 1: resumen breve (alojamiento, fechas, número de personas, total estándar de la estadía), la aclaración de que la reserva se confirma con la administradora, y la política de cancelación completa:
 "Para que tenga todo claro antes de reservar, esta es nuestra política de cancelación:
 
 Con más de 7 días de anticipación — puede reagendar sin costo o recibir un reembolso del 80%.
 Entre 3 y 7 días — un reagendamiento gratuito o reembolso del 50%.
 Menos de 3 días o no-show — sin reembolso. Si desea reagendar, aplica un cargo de L.500.
 
-En caso de fuerza mayor, cada situación se evalúa de forma individual. 🌿"
+En caso de fuerza mayor, cada situación se evalúa de forma individual."
+Parte 2: el mensaje de traspaso a la administradora (con el orden obligatorio indicado arriba), mencionando que ella aclarará cualquier detalle y aprobará cualquier tarifa especial, descuento o cargo adicional.
+Si el cliente ya recibió la política y el traspaso en esta conversación, no los repitas; solo ofrece el enlace y el número en una línea.
 
 FLUJO PARA DEPÓSITO O PAGO:
 Cuando el cliente indique que está listo para pagar o depositar, usa el mensaje de traspaso indicado arriba.
@@ -689,36 +790,22 @@ app.post('/chatwoot-webhook', async (req, res) => {
 
     const esNuevoCliente = conversaciones[key].mensajes.length === 0;
     const saludo = obtenerSaludo();
+    const systemBase = SYSTEM_PROMPT + `\n\nFecha de hoy en Honduras: ${fechaHoyHonduras()} (AAAA-MM-DD).`;
     const systemConSaludo = esNuevoCliente
-      ? SYSTEM_PROMPT + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
-      : SYSTEM_PROMPT;
+      ? systemBase + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
+      : systemBase;
 
     conversaciones[key].mensajes.push({ role: 'user', content: text });
 
     if (from) {
-      if (detectarIntencionDeposito(text)) await enviarAlerta(from, obtenerResumen(conversaciones[key].mensajes));
-      if (detectarConsultaDisponibilidad(text)) await enviarAlertaDisponibilidad(from, obtenerResumen(conversaciones[key].mensajes));
+      if (detectarIntencionDeposito(text)) await enviarAlerta(from, obtenerResumen(conversaciones[key].mensajes), conversaciones[key].ultimaConsulta);
+      if (detectarConsultaDisponibilidad(text)) await enviarAlertaDisponibilidad(from, obtenerResumen(conversaciones[key].mensajes), conversaciones[key].ultimaConsulta);
     }
 
     const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
 
-    const claudeResponse = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: systemConSaludo,
-        messages: mensajesParaClaude
-      },
-      {
-        headers: {
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    const reply = claudeResponse.data.content[0].text;
+    const reply = await llamarClaude(systemConSaludo, mensajesParaClaude, conversaciones[key]);
+    if (!reply) throw new Error('Respuesta vacía de Claude');
     conversaciones[key].ultimaActividad = Date.now();
     console.log(`💬 Vera responde: ${reply}`);
 
