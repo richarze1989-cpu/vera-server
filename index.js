@@ -247,19 +247,33 @@ function afirmaDisponibilidadSinVerificar(reply, c) {
 }
 
 // La estadía mínima de 2 noches aplica SOLO a llegadas del 7 al 10 de octubre de 2026.
-function minimaMalAplicada(reply) {
+// Se decide con las fechas que realmente se consultaron al motor (c), no con el texto de la respuesta.
+function enFeriado(llegada) {
+  return typeof llegada === 'string' && llegada >= '2026-10-07' && llegada <= '2026-10-10';
+}
+
+function minimaMalAplicada(reply, c) {
   if (!/estad[ií]a m[ií]nima/i.test(reply)) return false;
+  if (c && c.ok) return !enFeriado(c.llegada);
   const rangos = rangosDeFechas(reply);
   const tocaFeriado = rangos.some(r => r.mes === 10 && r.d1 <= 10 && (r.d2 - 1) >= 7);
   const sueltas = [...reply.matchAll(/\b(\d{1,2})\s+de\s+octubre\b/gi)].map(x => Number(x[1])).some(d => d >= 7 && d <= 10);
   return !(tocaFeriado || sueltas);
 }
 
+// Llegada en el feriado con 1 sola noche: la respuesta debe explicar el mínimo de 2 noches, no ofrecer 1 noche.
+function minimaOmitida(reply, c) {
+  if (!c || !c.ok || !enFeriado(c.llegada) || !(c.noches < 2)) return false;
+  if (/m[ií]nim/i.test(reply)) return false;
+  return /disponib|L\.\s?\d/i.test(reply);
+}
+
 // Segunda ronda forzada: obliga a consultar de nuevo antes de enviar.
 async function asegurarCoherencia(system, mensajes, reply, ctx) {
   const sinVerificar = afirmaDisponibilidadSinVerificar(reply, ctx.ultimaConsulta);
-  const minimaMal = minimaMalAplicada(reply);
-  if (!sinVerificar && !minimaMal) return reply;
+  const minimaMal = minimaMalAplicada(reply, ctx.ultimaConsulta);
+  const minimaFalta = minimaOmitida(reply, ctx.ultimaConsulta);
+  if (!sinVerificar && !minimaMal && !minimaFalta) return reply;
   const notas = [];
   if (sinVerificar) {
     console.log('⚠️ Respuesta afirma disponibilidad sin consulta para esas fechas — se fuerza nueva consulta');
@@ -268,6 +282,10 @@ async function asegurarCoherencia(system, mensajes, reply, ctx) {
   if (minimaMal) {
     console.log('⚠️ Respuesta aplica estadía mínima fuera del feriado — se corrige');
     notas.push('Tu respuesta anterior aplicó una estadía mínima de 2 noches, pero esa regla aplica ÚNICAMENTE a llegadas del 7 al 10 de octubre de 2026. Las fechas del cliente NO están en ese período: NO existe estadía mínima para ellas (una sola noche es válida). Rehaz tu respuesta sin mencionar estadía mínima.');
+  }
+  if (minimaFalta) {
+    console.log('⚠️ Respuesta ofrece 1 noche en el feriado sin explicar la estadía mínima — se corrige');
+    notas.push('Las fechas consultadas (llegada del 7 al 10 de octubre de 2026, 1 sola noche) caen en el feriado morazánico, donde la estadía mínima es de 2 noches. NO ofrezcas 1 noche ni des disponibilidad o precio como si se pudiera reservar. Explica con amabilidad la política de estadía mínima de 2 noches y ofrece ajustar las fechas (por ejemplo sumar una noche); si el cliente propone otras fechas, consulta de nuevo la herramienta.');
   }
   const extra = [
     ...mensajes,
@@ -340,7 +358,7 @@ async function enviarAlertaDisponibilidad(numeroCliente, resumen, consulta) {
 
 function calcularDelay(texto) {
   const palabras = texto.split(' ').length;
-  const segundos = Math.min(Math.max(Math.floor(palabras / 4), 3), 12);
+  const segundos = Math.min(Math.max(Math.floor(palabras / 5), 2), 8);
   return segundos * 1000;
 }
 
@@ -865,6 +883,69 @@ app.get('/webhook', (req, res) => {
   }
 });
 
+const DEBOUNCE_MS = Number(process.env.DEBOUNCE_MS || 4000);
+const pendientes = {};  // key -> contador del último mensaje recibido
+const cadena = {};      // key -> promesa de la respuesta en curso
+
+async function procesarConversacion(key, conversationId, token) {
+  if (pendientes[key] !== token) return;
+  const esNuevoCliente = !!conversaciones[key].saludoPendiente;
+  const saludo = obtenerSaludo();
+  const systemBase = SYSTEM_PROMPT + `\n\nFecha de hoy en Honduras: ${fechaHoyHonduras()} (AAAA-MM-DD).`;
+  const systemConSaludo = esNuevoCliente
+    ? systemBase + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
+    : systemBase;
+  const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
+
+  conversaciones[key].consultoEsteTurno = false;
+  const systemFinal = systemConSaludo + estadoConsulta(conversaciones[key].ultimaConsulta);
+  let reply = await llamarClaude(systemFinal, mensajesParaClaude, conversaciones[key]);
+  reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
+  // Los canales (WhatsApp/Instagram/Facebook) no muestran bien los asteriscos.
+  reply = reply.replace(/\*+/g, '');
+  reply = aUsted(reply);
+  if (conversaciones[key].consultoEsteTurno && !/administradora/i.test(reply)) {
+    // Si el mensaje termina en una pregunta, el cierre va ANTES de ella (la pregunta debe ser lo último que lea el cliente).
+    const base = reply.trimEnd();
+    const idxUltimo = base.lastIndexOf('\n\n');
+    const ultimoBloque = idxUltimo >= 0 ? base.slice(idxUltimo + 2) : '';
+    if (idxUltimo >= 0 && /\?\s*[^\w\s]*\s*$/.test(ultimoBloque) && !ultimoBloque.includes('---SPLIT---')) {
+      reply = base.slice(0, idxUltimo) + '\n\n' + CIERRE_ADMINISTRADORA + '\n\n' + ultimoBloque;
+    } else {
+      reply = base + '\n\n' + CIERRE_ADMINISTRADORA;
+    }
+  }
+  if (!reply) throw new Error('Respuesta vacía de Claude');
+  if (pendientes[key] !== token) { console.log(`↪️ Respuesta descartada (conv ${conversationId}): llegó un mensaje más nuevo`); return; }
+  conversaciones[key].saludoPendiente = false;
+  conversaciones[key].ultimaActividad = Date.now();
+  console.log(`💬 Vera responde: ${reply}`);
+
+  const partes = reply.split('---SPLIT---').map(p => p.trim()).filter(p => p.length > 0);
+
+  // La política de cancelación SIEMPRE se envía antes del traspaso a la administradora, salvo que ya esté en los últimos 12 mensajes (evita repetirla seguida).
+  const rxPolitica = /pol[ií]tica de cancelaci[oó]n/i;
+  const yaPolitica = conversaciones[key].mensajes.slice(-12).some(m => m.role === 'assistant' && typeof m.content === 'string' && rxPolitica.test(m.content)) || partes.some(p => rxPolitica.test(p));
+  const idxTraspaso = partes.findIndex(p => p.includes('wa.me/50495812311'));
+  const rxProceso = /confirmar[aá] su reserva al recibirlo/i;
+  const yaProceso = conversaciones[key].mensajes.slice(-12).some(m => m.role === 'assistant' && typeof m.content === 'string' && rxProceso.test(m.content)) || partes.some(p => rxProceso.test(p));
+  const insertar = [];
+  if (idxTraspaso >= 0 && !yaProceso) insertar.push(PROCESO_RESERVA);
+  if (idxTraspaso >= 0 && !yaPolitica) insertar.push(POLITICA_CANCELACION);
+  if (insertar.length) partes.splice(idxTraspaso, 0, ...insertar);
+
+  for (const parte of partes) {
+    conversaciones[key].mensajes.push({ role: 'assistant', content: parte });
+  }
+
+  for (let i = 0; i < partes.length; i++) {
+    const delay = calcularDelay(partes[i]);
+    console.log(`⏳ Esperando ${delay / 1000}s antes de enviar parte ${i + 1}/${partes.length}`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    await responderEnChatwoot(conversationId, partes[i]);
+  }
+}
+
 app.post('/chatwoot-webhook', async (req, res) => {
   try {
     res.sendStatus(200);
@@ -890,18 +971,12 @@ app.post('/chatwoot-webhook', async (req, res) => {
       const historialPrevio = await cargarHistorialDesdeChatwoot(conversationId);
       conversaciones[key] = {
         mensajes: historialPrevio,
-        ultimaActividad: Date.now()
+        ultimaActividad: Date.now(),
+        saludoPendiente: historialPrevio.length === 0
       };
     }
 
     conversaciones[key].ultimaActividad = Date.now();
-
-    const esNuevoCliente = conversaciones[key].mensajes.length === 0;
-    const saludo = obtenerSaludo();
-    const systemBase = SYSTEM_PROMPT + `\n\nFecha de hoy en Honduras: ${fechaHoyHonduras()} (AAAA-MM-DD).`;
-    const systemConSaludo = esNuevoCliente
-      ? systemBase + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
-      : systemBase;
 
     conversaciones[key].mensajes.push({ role: 'user', content: text });
 
@@ -910,53 +985,16 @@ app.post('/chatwoot-webhook', async (req, res) => {
       // Consultas de disponibilidad: Vera las responde sola (motor). Karen solo recibe alerta cuando el cliente quiere reservar.
     }
 
-    const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
 
-    conversaciones[key].consultoEsteTurno = false;
-    const systemFinal = systemConSaludo + estadoConsulta(conversaciones[key].ultimaConsulta);
-    let reply = await llamarClaude(systemFinal, mensajesParaClaude, conversaciones[key]);
-    reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
-    // Los canales (WhatsApp/Instagram/Facebook) no muestran bien los asteriscos.
-    reply = reply.replace(/\*+/g, '');
-    reply = aUsted(reply);
-    if (conversaciones[key].consultoEsteTurno && !/administradora/i.test(reply)) {
-      // Si el mensaje termina en una pregunta, el cierre va ANTES de ella (la pregunta debe ser lo último que lea el cliente).
-      const base = reply.trimEnd();
-      const idxUltimo = base.lastIndexOf('\n\n');
-      const ultimoBloque = idxUltimo >= 0 ? base.slice(idxUltimo + 2) : '';
-      if (idxUltimo >= 0 && /\?\s*[^\w\s]*\s*$/.test(ultimoBloque) && !ultimoBloque.includes('---SPLIT---')) {
-        reply = base.slice(0, idxUltimo) + '\n\n' + CIERRE_ADMINISTRADORA + '\n\n' + ultimoBloque;
-      } else {
-        reply = base + '\n\n' + CIERRE_ADMINISTRADORA;
-      }
-    }
-    if (!reply) throw new Error('Respuesta vacía de Claude');
-    conversaciones[key].ultimaActividad = Date.now();
-    console.log(`💬 Vera responde: ${reply}`);
-
-    const partes = reply.split('---SPLIT---').map(p => p.trim()).filter(p => p.length > 0);
-
-    // La política de cancelación SIEMPRE se envía antes del traspaso a la administradora, salvo que ya esté en los últimos 12 mensajes (evita repetirla seguida).
-    const rxPolitica = /pol[ií]tica de cancelaci[oó]n/i;
-    const yaPolitica = conversaciones[key].mensajes.slice(-12).some(m => m.role === 'assistant' && typeof m.content === 'string' && rxPolitica.test(m.content)) || partes.some(p => rxPolitica.test(p));
-    const idxTraspaso = partes.findIndex(p => p.includes('wa.me/50495812311'));
-    const rxProceso = /confirmar[aá] su reserva al recibirlo/i;
-    const yaProceso = conversaciones[key].mensajes.slice(-12).some(m => m.role === 'assistant' && typeof m.content === 'string' && rxProceso.test(m.content)) || partes.some(p => rxProceso.test(p));
-    const insertar = [];
-    if (idxTraspaso >= 0 && !yaProceso) insertar.push(PROCESO_RESERVA);
-    if (idxTraspaso >= 0 && !yaPolitica) insertar.push(POLITICA_CANCELACION);
-    if (insertar.length) partes.splice(idxTraspaso, 0, ...insertar);
-
-    for (const parte of partes) {
-      conversaciones[key].mensajes.push({ role: 'assistant', content: parte });
-    }
-
-    for (let i = 0; i < partes.length; i++) {
-      const delay = calcularDelay(partes[i]);
-      console.log(`⏳ Esperando ${delay / 1000}s antes de enviar parte ${i + 1}/${partes.length}`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      await responderEnChatwoot(conversationId, partes[i]);
-    }
+    // Agrupa mensajes seguidos: espera un momento por si el cliente sigue escribiendo y responde UNA sola vez.
+    const token = (pendientes[key] = (pendientes[key] || 0) + 1);
+    await new Promise(r => setTimeout(r, DEBOUNCE_MS));
+    if (pendientes[key] !== token) return; // llegó un mensaje más nuevo: ese se encargará de responder
+    // Una respuesta a la vez por conversación.
+    const previa = cadena[key] || Promise.resolve();
+    const actual = previa.then(() => procesarConversacion(key, conversationId, token)).catch(e => console.error('❌ Error procesando conversación:', e.response?.data || e.message));
+    cadena[key] = actual;
+    await actual;
   } catch (error) {
     console.error('❌ Error en chatwoot-webhook:', error.response?.data || error.message);
   }
