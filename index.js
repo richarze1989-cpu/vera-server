@@ -126,8 +126,28 @@ function obtenerResumen(historial) {
 }
 
 function fechaHoyHonduras() {
+  if (process.env.FECHA_HOY_PRUEBA) return process.env.FECHA_HOY_PRUEBA; // solo para pruebas
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tegucigalpa', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
+
+// Feriado morazánico 2026: la finca está COMPLETA en las noches del 7, 8, 9 y 10 de octubre (la última salida posible es el 11).
+// El aviso se desactiva solo después del 10 de octubre (hora de Honduras); no hace falta volver a tocar el código.
+const LLENO_PRIMERA_NOCHE = '2026-10-07';
+const LLENO_ULTIMA_NOCHE = '2026-10-10';
+const LLENO_VIGENTE_HASTA = '2026-10-10';
+
+function feriadoLleno(checkIn, checkOut) {
+  if (fechaHoyHonduras() > LLENO_VIGENTE_HASTA) return false;
+  const rx = /^\d{4}-\d{2}-\d{2}$/;
+  if (typeof checkIn !== 'string' || typeof checkOut !== 'string' || !rx.test(checkIn) || !rx.test(checkOut)) return false;
+  if (checkOut <= checkIn) return false;
+  // Alguna noche de la estadía cae entre el 7 y el 9 de octubre: entra al día check_in, sale el día check_out (esa noche no cuenta).
+  return checkIn <= LLENO_ULTIMA_NOCHE && checkOut > LLENO_PRIMERA_NOCHE;
+}
+
+const MENSAJE_FERIADO_LLENO = `Muchas gracias por su interés en Finca Las Vírgenes. Para esas fechas, por el feriado morazánico, lamentablemente ya nos encontramos con todas nuestras habitaciones y cabañas ocupadas. 🌿
+---SPLIT---
+Con mucho gusto lo recibiremos en otra fecha: si me indica qué días le convienen, reviso la disponibilidad que mejor se ajuste a su plan. Y si desea conocer precios, servicios o cualquier otra información de la finca, cuente conmigo; será un placer atenderle.`;
 
 const L = (n) => (n === null || n === undefined) ? 'a cotizar' : 'L.' + Number(n).toLocaleString('en-US');
 
@@ -195,7 +215,12 @@ async function llamarClaude(system, mensajes, ctx) {
     const resultados = [];
     for (const b of contenido.filter(x => x.type === 'tool_use')) {
       let salida;
-      if (b.name === 'consultar_disponibilidad') {
+      if (b.name === 'consultar_disponibilidad' && feriadoLleno((b.input || {}).check_in, (b.input || {}).check_out)) {
+        // Fechas completas por el feriado: no se consulta al motor ni se ofrece precio; la respuesta al cliente es fija y cordial.
+        console.log(`🚫 Feriado lleno ${JSON.stringify(b.input)} -> se responde que estamos completos`);
+        ctx.llenoEsteTurno = true;
+        salida = { ok: false, error: 'Todas las habitaciones y cabañas están ocupadas en esas fechas por el feriado morazánico. Informa con amabilidad que estamos completos para esas fechas, que con gusto lo recibimos en otra fecha, y que con gusto ayudas con precios u otra información. No des precios de esas fechas.' };
+      } else if (b.name === 'consultar_disponibilidad') {
         salida = await consultarDisponibilidad(b.input || {});
         console.log(`🔎 Disponibilidad ${JSON.stringify(b.input)} -> ${salida.ok ? (salida.opciones || []).length + ' opciones' : 'error: ' + salida.error}`);
         if (salida.ok) ctx.ultimaConsulta = salida;
@@ -673,6 +698,9 @@ Si el cliente consulta disponibilidad o quiere reservar para esas fechas con sol
 
 Esta regla aplica únicamente para llegadas del 7 al 10 de octubre de 2026. Fuera de esas fechas NO hay estadía mínima: por ejemplo, una sola noche del 17 al 18 de octubre, del 16 al 17 o del 24 al 25 es perfectamente válida. Nunca digas que "fechas cercanas al feriado" tienen mínimo de noches.
 
+FERIADO MORAZÁNICO 2026 — ESTAMOS COMPLETOS (noches del 7, 8, 9 y 10 de octubre de 2026; vigente solo hasta el 10 de octubre):
+Si el cliente quiere hospedarse alguna de esas noches (por ejemplo del 7 al 10, del 8 al 9, del 10 al 11 o del 6 al 8 de octubre), la finca está completa. En ese caso NO le preguntes cuántas personas son ni le pidas más datos: llama de inmediato a consultar_disponibilidad con las fechas que indicó y adultos 2; el sistema te dirá cómo responder y enviará el mensaje correspondiente. Nunca ofrezcas disponibilidad ni des precios para esas noches. Si el cliente pregunta por otras fechas (por ejemplo desde el 10 de octubre en adelante, o para después del feriado), continúa con el flujo normal de siempre.
+
 POLÍTICA DE RESERVAS:
 - Se requiere 50% o 100% de anticipo para confirmar
 - Check-in: 3:00 PM | Check-out: 11:00 AM
@@ -898,9 +926,14 @@ async function procesarConversacion(key, conversationId, token) {
   const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
 
   conversaciones[key].consultoEsteTurno = false;
+  conversaciones[key].llenoEsteTurno = false;
   const systemFinal = systemConSaludo + estadoConsulta(conversaciones[key].ultimaConsulta);
   let reply = await llamarClaude(systemFinal, mensajesParaClaude, conversaciones[key]);
-  reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
+  if (conversaciones[key].llenoEsteTurno && !conversaciones[key].consultoEsteTurno) {
+    reply = MENSAJE_FERIADO_LLENO; // texto fijo: no depende de lo que redacte el modelo
+  } else {
+    reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
+  }
   // Los canales (WhatsApp/Instagram/Facebook) no muestran bien los asteriscos.
   reply = reply.replace(/\*+/g, '');
   reply = aUsted(reply);
