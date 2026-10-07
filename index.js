@@ -205,8 +205,9 @@ async function llamarClaude(system, mensajes, ctx) {
     const r = await axios.post(
       ANTHROPIC_URL,
       { model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system, messages: msgs, tools: HERRAMIENTAS },
-      { headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' } }
+      { headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, signal: ctx.signal }
     );
+    if (ctx.signal && ctx.signal.aborted) throw new Error('cancelada');
     const contenido = r.data.content || [];
     if (r.data.stop_reason !== 'tool_use') {
       return contenido.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
@@ -312,12 +313,19 @@ async function asegurarCoherencia(system, mensajes, reply, ctx) {
     console.log('⚠️ Respuesta ofrece 1 noche en el feriado sin explicar la estadía mínima — se corrige');
     notas.push('Las fechas consultadas (llegada del 7 al 10 de octubre de 2026, 1 sola noche) caen en el feriado morazánico, donde la estadía mínima es de 2 noches. NO ofrezcas 1 noche ni des disponibilidad o precio como si se pudiera reservar. Explica con amabilidad la política de estadía mínima de 2 noches y ofrece ajustar las fechas (por ejemplo sumar una noche); si el cliente propone otras fechas, consulta de nuevo la herramienta.');
   }
-  const extra = [
-    ...mensajes,
-    { role: 'assistant', content: reply },
-    { role: 'user', content: '[Nota interna del sistema, el cliente no la ve] ' + notas.join(' ') + ' Responde al cliente directamente, sin mencionar esta nota.' }
-  ];
-  const nueva = await llamarClaude(system, extra, ctx);
+  let nueva;
+  if (BURST_V2) {
+    // La corrección va como bloque de sistema (no como turno del cliente): así el modelo no abre con "Tiene razón".
+    const sistemaCorregido = system + '\n\nCORRECCIÓN INTERNA (el cliente no la ve ni la ha pedido; no la menciones ni te disculpes por ella): ' + notas.join(' ') + ' Responde al último mensaje del cliente directamente y con naturalidad.';
+    nueva = await llamarClaude(sistemaCorregido, mensajes, ctx);
+  } else {
+    const extra = [
+      ...mensajes,
+      { role: 'assistant', content: reply },
+      { role: 'user', content: '[Nota interna del sistema, el cliente no la ve] ' + notas.join(' ') + ' Responde al cliente directamente, sin mencionar esta nota.' }
+    ];
+    nueva = await llamarClaude(system, extra, ctx);
+  }
   return nueva || reply;
 }
 
@@ -407,6 +415,8 @@ Tu personalidad es cálida, resuelta, elegante y siempre encuentras una solució
 Nunca menciones que eres un bot, inteligencia artificial o asistente virtual. Si alguien te pregunta directamente, responde que eres parte del equipo de atención al cliente de Finca Las Vírgenes.
 
 Siempre inicia tu primer mensaje con el saludo apropiado según la hora actual en Honduras. En mensajes siguientes no repitas el saludo.
+
+ESTILO DE CONVERSACIÓN: habla como una excelente recepcionista de hotel boutique: cálida, atenta y sin repetirte. Trata siempre de usted, aunque el cliente te tutee. Saluda una sola vez por conversación. Antes de preguntar algo, revisa lo que el cliente ya dijo (personas, niños, fechas, tipo de alojamiento) y no lo vuelvas a pedir. Nunca repitas una pregunta hecha en los últimos mensajes. Si el cliente envía varios mensajes seguidos, léelos como uno solo y responde una sola vez. Confirma el dato recibido con naturalidad y avanza con una sola pregunta o un solo paso. No inicies con "Tiene razón", "Disculpe" ni "Excelente noticia" salvo que corresponda de verdad.
 
 Si el cliente solicita un número de teléfono para contacto directo o llamada, proporciona siempre estos dos números: +504 9581-2311 y +504 9948-8659. Ambos corresponden a la administradora de la finca y están disponibles para llamadas.
 
@@ -911,19 +921,90 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-const DEBOUNCE_MS = Number(process.env.DEBOUNCE_MS || 4000);
+// BURST_V2=on (por defecto): espera deslizante, cancelación de respuestas obsoletas y verificación contra Chatwoot.
+// BURST_V2=off: comportamiento anterior (espera fija de 4 s).
+const BURST_V2 = String(process.env.BURST_V2 || 'on').toLowerCase() !== 'off';
+const DEBOUNCE_MS = Number(process.env.DEBOUNCE_MS || (BURST_V2 ? 8000 : 4000));
+const MAX_WAIT_MS = Number(process.env.MAX_WAIT_MS || 20000);
 const pendientes = {};  // key -> contador del último mensaje recibido
 const cadena = {};      // key -> promesa de la respuesta en curso
+const rafagas = {};     // key -> { msgs, firstAt, gen, ctrl } (solo BURST_V2)
+console.log(`⚙️ BURST_V2=${BURST_V2 ? 'on' : 'off'} DEBOUNCE_MS=${DEBOUNCE_MS} MAX_WAIT_MS=${MAX_WAIT_MS}`);
+
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+const fueCancelado = e => e && (e.code === 'ERR_CANCELED' || e.name === 'CanceledError' || e.name === 'AbortError' || e.message === 'cancelada');
+
+// ¿Existe en Chatwoot un mensaje entrante posterior al último que se usó como entrada?
+// Protege ante reinicios o webhooks tardíos. Si Chatwoot no responde, no se bloquea el envío.
+async function hayEntranteMasNuevo(conversationId, ultimoId) {
+  if (!ultimoId) return false;
+  try {
+    const r = await axios.get(
+      `${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`,
+      { headers: { 'api_access_token': CHATWOOT_API_TOKEN }, timeout: 5000 }
+    );
+    const msgs = r.data?.payload?.messages || r.data?.payload || [];
+    return msgs.some(m => m.message_type === 'incoming' && Number(m.id) > Number(ultimoId));
+  } catch (e) {
+    return false;
+  }
+}
+
+// Une turnos consecutivos del mismo rol: una ráfaga del cliente llega al modelo como un solo turno.
+function unirTurnos(mensajes) {
+  const out = [];
+  for (const m of mensajes) {
+    const prev = out[out.length - 1];
+    if (prev && prev.role === m.role && typeof prev.content === 'string' && typeof m.content === 'string') {
+      out[out.length - 1] = { role: prev.role, content: prev.content + '\n' + m.content };
+    } else out.push({ role: m.role, content: m.content });
+  }
+  return out;
+}
 
 async function procesarConversacion(key, conversationId, token) {
   if (pendientes[key] !== token) return;
+  const rf = BURST_V2 ? (rafagas[key] = rafagas[key] || { msgs: 0, firstAt: 0, gen: 0, ctrl: null }) : null;
+  let gen = 0, esperaMs = 0, kMsgs = 0, ctrl = null, forzada = false;
+  if (rf) {
+    gen = ++rf.gen;
+    kMsgs = rf.msgs;
+    esperaMs = rf.firstAt ? Date.now() - rf.firstAt : 0;
+    // Si el tope MAX_WAIT_MS obligó a responder, esta generación NO se cancela por mensajes posteriores:
+    // se envía, y lo posterior se atiende en una respuesta aparte (evita ráfagas largas sin respuesta).
+    forzada = rf.forzadoToken === token;
+    rf.firstAt = 0; // los mensajes nuevos que lleguen desde ahora inician otra espera
+    ctrl = rf.ctrl = new AbortController();
+    rf.ctrlForzado = forzada;
+    conversaciones[key].signal = ctrl.signal;
+    conversaciones[key].entradaId = conversaciones[key].ultimoEntranteId;
+    conversaciones[key].posHistorial = conversaciones[key].mensajes.length; // dónde insertar lo que Vera envíe
+    conversaciones[key].forzada = forzada;
+  }
+  const vigente = () => (forzada || pendientes[key] === token) && !(ctrl && ctrl.signal.aborted);
+  try {
+    await generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen, kMsgs, esperaMs);
+  } catch (e) {
+    if (rf && (fueCancelado(e) || (ctrl && ctrl.signal.aborted))) {
+      console.log(`ráfaga conv ${conversationId}: ${rf.msgs} mensajes, espera ${esperaMs} ms, generación #${gen}, descartada (llegó un mensaje nuevo)`);
+      return;
+    }
+    throw e;
+  } finally {
+    if (rf && rf.ctrl === ctrl) { rf.ctrl = null; conversaciones[key].signal = undefined; }
+  }
+}
+
+async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen, kMsgs, esperaMs) {
   const esNuevoCliente = !!conversaciones[key].saludoPendiente;
   const saludo = obtenerSaludo();
   const systemBase = SYSTEM_PROMPT + `\n\nFecha de hoy en Honduras: ${fechaHoyHonduras()} (AAAA-MM-DD).`;
   const systemConSaludo = esNuevoCliente
     ? systemBase + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
     : systemBase;
-  const mensajesParaClaude = aplicarVentanaDeContexto(conversaciones[key].mensajes);
+  const mensajesParaClaude = BURST_V2
+    ? unirTurnos(aplicarVentanaDeContexto(conversaciones[key].mensajes))
+    : aplicarVentanaDeContexto(conversaciones[key].mensajes);
 
   conversaciones[key].consultoEsteTurno = false;
   conversaciones[key].llenoEsteTurno = false;
@@ -949,7 +1030,17 @@ async function procesarConversacion(key, conversationId, token) {
     }
   }
   if (!reply) throw new Error('Respuesta vacía de Claude');
-  if (pendientes[key] !== token) { console.log(`↪️ Respuesta descartada (conv ${conversationId}): llegó un mensaje más nuevo`); return; }
+  if (!vigente()) {
+    console.log(`↪️ Respuesta descartada (conv ${conversationId}): llegó un mensaje más nuevo`);
+    if (rf) console.log(`ráfaga conv ${conversationId}: ${rf.msgs} mensajes, espera ${esperaMs} ms, generación #${gen}, descartada`);
+    return;
+  }
+  // Verificación final contra Chatwoot (BURST_V2): ningún mensaje entrante posterior al último usado como entrada.
+  if (BURST_V2 && !conversaciones[key].forzada && await hayEntranteMasNuevo(conversationId, conversaciones[key].entradaId)) {
+    console.log(`↪️ Respuesta descartada (conv ${conversationId}): Chatwoot tiene un mensaje entrante más nuevo`);
+    console.log(`ráfaga conv ${conversationId}: ${rf.msgs} mensajes, espera ${esperaMs} ms, generación #${gen}, descartada (verificación Chatwoot)`);
+    return;
+  }
   conversaciones[key].saludoPendiente = false;
   conversaciones[key].ultimaActividad = Date.now();
   console.log(`💬 Vera responde: ${reply}`);
@@ -967,15 +1058,36 @@ async function procesarConversacion(key, conversationId, token) {
   if (idxTraspaso >= 0 && !yaPolitica) insertar.push(POLITICA_CANCELACION);
   if (insertar.length) partes.splice(idxTraspaso, 0, ...insertar);
 
-  for (const parte of partes) {
-    conversaciones[key].mensajes.push({ role: 'assistant', content: parte });
+  if (!BURST_V2) {
+    for (const parte of partes) {
+      conversaciones[key].mensajes.push({ role: 'assistant', content: parte });
+    }
   }
 
+  let enviadas = 0;
   for (let i = 0; i < partes.length; i++) {
     const delay = calcularDelay(partes[i]);
     console.log(`⏳ Esperando ${delay / 1000}s antes de enviar parte ${i + 1}/${partes.length}`);
     await new Promise(resolve => setTimeout(resolve, delay));
-    await responderEnChatwoot(conversationId, partes[i]);
+    if (BURST_V2) {
+      // Si llegó un mensaje nuevo, se detienen las partes restantes; lo ya enviado queda en el historial.
+      if (!vigente()) {
+        console.log(`↪️ Envío detenido (conv ${conversationId}): llegó un mensaje nuevo; ${partes.length - i} parte(s) sin enviar`);
+        console.log(`ráfaga conv ${conversationId}: ${rf.msgs} mensajes, espera ${esperaMs} ms, generación #${gen}, descartada (parcial ${enviadas}/${partes.length})`);
+        return;
+      }
+      await responderEnChatwoot(conversationId, partes[i]);
+      // Se inserta justo después de los mensajes del cliente que contestó (no al final, por si llegaron otros mientras tanto).
+      const hist = conversaciones[key].mensajes;
+      hist.splice(Math.min(conversaciones[key].posHistorial++, hist.length), 0, { role: 'assistant', content: partes[i] });
+      enviadas++;
+    } else {
+      await responderEnChatwoot(conversationId, partes[i]);
+    }
+  }
+  if (rf) {
+    console.log(`ráfaga conv ${conversationId}: ${rf.msgs} mensajes, espera ${esperaMs} ms, generación #${gen}, enviada`);
+    rf.msgs = 0;
   }
 }
 
@@ -1012,6 +1124,13 @@ app.post('/chatwoot-webhook', async (req, res) => {
     conversaciones[key].ultimaActividad = Date.now();
 
     conversaciones[key].mensajes.push({ role: 'user', content: text });
+    if (BURST_V2) {
+      conversaciones[key].ultimoEntranteId = msgId;
+      const rf = (rafagas[key] = rafagas[key] || { msgs: 0, firstAt: 0, gen: 0, ctrl: null });
+      rf.msgs++;
+      if (!rf.firstAt) rf.firstAt = Date.now();
+      if (rf.ctrl && !rf.ctrlForzado) rf.ctrl.abort(); // cancela la generación en curso: quedó obsoleta
+    }
 
     if (from) {
       if (detectarIntencionDeposito(text)) await enviarAlerta(from, obtenerResumen(conversaciones[key].mensajes), conversaciones[key].ultimaConsulta);
@@ -1021,7 +1140,14 @@ app.post('/chatwoot-webhook', async (req, res) => {
 
     // Agrupa mensajes seguidos: espera un momento por si el cliente sigue escribiendo y responde UNA sola vez.
     const token = (pendientes[key] = (pendientes[key] || 0) + 1);
-    await new Promise(r => setTimeout(r, DEBOUNCE_MS));
+    // BURST_V2: la espera se reinicia con cada mensaje, con tope MAX_WAIT_MS desde el primer mensaje pendiente.
+    let espera = DEBOUNCE_MS;
+    if (BURST_V2) {
+      const restante = MAX_WAIT_MS - (Date.now() - rafagas[key].firstAt);
+      if (restante <= DEBOUNCE_MS) rafagas[key].forzadoToken = token; // el tope llegó antes que la pausa del cliente
+      espera = Math.max(0, Math.min(DEBOUNCE_MS, restante));
+    }
+    await new Promise(r => setTimeout(r, espera));
     if (pendientes[key] !== token) return; // llegó un mensaje más nuevo: ese se encargará de responder
     // Una respuesta a la vez por conversación.
     const previa = cadena[key] || Promise.resolve();
