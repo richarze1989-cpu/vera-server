@@ -125,9 +125,112 @@ function obtenerResumen(historial) {
     .join('\n');
 }
 
-function fechaHoyHonduras() {
+function fechaHoyHonduras(ahora = new Date()) {
   if (process.env.FECHA_HOY_PRUEBA) return process.env.FECHA_HOY_PRUEBA; // solo para pruebas
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tegucigalpa', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Tegucigalpa', year: 'numeric', month: '2-digit', day: '2-digit' }).format(ahora);
+}
+
+function horaHonduras(ahora = new Date()) {
+  if (process.env.HORA_HOY_PRUEBA) return process.env.HORA_HOY_PRUEBA; // solo para pruebas
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Tegucigalpa', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ahora);
+}
+
+// ===== Calendario y validación de días de la semana (DATE_GUARD=on|off) =====
+// El servidor corre en UTC: "hoy" se calcula siempre en America/Tegucigalpa. Vera nunca deduce el día de la semana por su cuenta.
+const DATE_GUARD = String(process.env.DATE_GUARD || 'on').toLowerCase() !== 'off';
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const NOMBRE_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const sinAcentos = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const partesISO = iso => { const [y, m, d] = iso.split('-').map(Number); return { y, m, d }; };
+const diaSemanaDe = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+function fechaExiste(y, m, d) { const dt = new Date(Date.UTC(y, m - 1, d)); return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d; }
+function sumarDias(iso, n) { const { y, m, d } = partesISO(iso); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); }
+function fechaLarga(iso) { const { y, m, d } = partesISO(iso); return `${DIAS_SEMANA[diaSemanaDe(y, m, d)]} ${d} de ${NOMBRE_MES[m - 1]} de ${y}`; }
+function fechaCorta(iso) { const { y, m, d } = partesISO(iso); return `${DIAS_SEMANA[diaSemanaDe(y, m, d)]} ${d} de ${NOMBRE_MES[m - 1]}`; }
+function indiceDia(nombre) { const n = sinAcentos(nombre); return DIAS_SEMANA.findIndex(x => sinAcentos(x) === n); }
+
+// Bloque de sistema que cambia cada día (va FUERA de la parte estática del prompt).
+function contextoFechas(hoyISO = fechaHoyHonduras(), hora = horaHonduras()) {
+  const lineas = [];
+  for (let i = 0; i < 28; i++) {
+    const iso = sumarDias(hoyISO, i);
+    const etiqueta = i === 0 ? 'HOY: ' : i === 1 ? 'MAÑANA: ' : i === 2 ? 'PASADO MAÑANA: ' : '';
+    lineas.push(etiqueta + fechaLarga(iso));
+  }
+  return `\n\nCALENDARIO OFICIAL (hora de Honduras; ahora son las ${hora} del ${fechaLarga(hoyISO)}). Los próximos 28 días:\n${lineas.join('\n')}\n\nREGLAS DE FECHAS: Para cualquier fecha usa únicamente este calendario. Nunca deduzcas el día de la semana por tu cuenta. Si el cliente dice un día sin fecha ("el viernes"), tradúcelo con el calendario y confírmalo con naturalidad ("el viernes 9 de octubre, ¿correcto?"). Si el día y la fecha que dice el cliente no coinciden, pregunta cuál quiso decir ANTES de consultar disponibilidad. Cuando el cliente mencionó un día de la semana junto a la fecha, envíalo en el parámetro dia_semana de la herramienta. No sugieras fechas alternativas sin haberlas consultado con la herramienta en este mismo turno. Si una noche está agotada, dilo con claridad; menciona la estadía mínima de 2 noches solo cuando sea el motivo real. Para fechas fuera de este calendario, no menciones el día de la semana a menos que el cliente lo haya dicho.`;
+}
+
+// Validación del parámetro dia_semana de la herramienta: debe coincidir con la llegada o con la salida.
+function validarDiaSemana(diaSemana, checkIn, checkOut) {
+  if (!diaSemana || typeof diaSemana !== 'string') return null;
+  const idx = indiceDia(diaSemana);
+  const rx = /^\d{4}-\d{2}-\d{2}$/;
+  if (idx < 0 || typeof checkIn !== 'string' || !rx.test(checkIn)) return null;
+  const dowDe = iso => { const p = partesISO(iso); return diaSemanaDe(p.y, p.m, p.d); };
+  if (dowDe(checkIn) === idx) return null;
+  if (typeof checkOut === 'string' && rx.test(checkOut) && dowDe(checkOut) === idx) return null;
+  const p = partesISO(checkIn);
+  const real = DIAS_SEMANA[dowDe(checkIn)];
+  return `El ${p.d} de ${NOMBRE_MES[p.m - 1]} de ${p.y} es ${real}, no ${diaSemana.toLowerCase()}. Aclara con el cliente cuál quiso decir (pregunta con naturalidad, por ejemplo: "¿se refiere al ${fechaCorta(cercanaConDia(checkIn, idx))} o al ${fechaCorta(checkIn)}?"). No consultes disponibilidad hasta que lo confirme.`;
+}
+
+// Fecha más cercana (±3 días) a refISO que cae en el día de la semana idx.
+function cercanaConDia(refISO, idx) {
+  for (const off of [0, -1, 1, -2, 2, -3, 3]) {
+    const iso = sumarDias(refISO, off);
+    const p = partesISO(iso);
+    if (diaSemanaDe(p.y, p.m, p.d) === idx) return iso;
+  }
+  return refISO;
+}
+
+// Guarda de salida: detecta "viernes 10 de octubre", "jueves 6", etc. y las compara con el calendario.
+const rxDiaFecha = () => new RegExp('\\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\\s+(\\d{1,2})(?:\\s+de\\s+(' + MESES.join('|') + '))?\\b', 'gi');
+
+function revisarDiasFechas(texto, hoyISO = fechaHoyHonduras()) {
+  const problemas = [];
+  if (typeof texto !== 'string') return problemas;
+  const hoy = partesISO(hoyISO);
+  for (const m of texto.matchAll(rxDiaFecha())) {
+    const idx = indiceDia(m[1]);
+    const num = Number(m[2]);
+    const candidatas = [];
+    if (m[3]) {
+      const mes = MES_NUM[m[3].toLowerCase()];
+      for (const y of [hoy.y, hoy.y + 1]) {
+        if (!fechaExiste(y, mes, num)) continue;
+        const iso = `${y}-${String(mes).padStart(2, '0')}-${String(num).padStart(2, '0')}`;
+        if (iso >= sumarDias(hoyISO, -30)) candidatas.push(iso);
+      }
+    } else {
+      for (let k = 0; k < 3; k++) {
+        const t = new Date(Date.UTC(hoy.y, hoy.m - 1 + k, 1));
+        const y = t.getUTCFullYear(), mes = t.getUTCMonth() + 1;
+        if (!fechaExiste(y, mes, num)) continue;
+        const iso = `${y}-${String(mes).padStart(2, '0')}-${String(num).padStart(2, '0')}`;
+        if (iso >= sumarDias(hoyISO, -1)) candidatas.push(iso);
+      }
+    }
+    if (!candidatas.length) continue; // fecha inexistente: no es asunto de esta guarda
+    const coincide = candidatas.some(iso => { const p = partesISO(iso); return diaSemanaDe(p.y, p.m, p.d) === idx; });
+    if (!coincide) problemas.push({ texto: m[0], idx, ref: candidatas[0], alterna: cercanaConDia(candidatas[0], idx) });
+  }
+  return problemas;
+}
+
+function preguntaAclaracion(p) {
+  const a = p.alterna, b = p.ref;
+  const pa = partesISO(a), pb = partesISO(b);
+  const [x, y] = a <= b ? [a, b] : [b, a];
+  const px = partesISO(x), py = partesISO(y);
+  const opciones = px.m === py.m
+    ? `${DIAS_SEMANA[diaSemanaDe(px.y, px.m, px.d)]} ${px.d} o al ${DIAS_SEMANA[diaSemanaDe(py.y, py.m, py.d)]} ${py.d} de ${NOMBRE_MES[py.m - 1]}`
+    : `${fechaCorta(x)} o al ${fechaCorta(y)}`;
+  return `Para asegurarme de revisar la fecha correcta, ¿se refiere al ${opciones}? 🌿`;
+}
+
+function notaCorreccionFechas(problemas) {
+  return 'En tu respuesta anterior hay una combinación de día de la semana y fecha que NO coincide con el calendario oficial: ' + problemas.map(p => `"${p.texto}" (según el calendario: ${fechaLarga(p.ref)}; el ${DIAS_SEMANA[p.idx]} más cercano es ${fechaLarga(p.alterna)})`).join('; ') + '. Corrige tu respuesta usando únicamente el calendario. Si no estás segura de cuál fecha quiso decir el cliente, pregúntale cuál prefiere antes de afirmar disponibilidad.';
 }
 
 // Feriado morazánico 2026: la finca está COMPLETA en las noches del 7, 8, 9 y 10 de octubre (la última salida posible es el 11).
@@ -160,7 +263,8 @@ const HERRAMIENTAS = [{
       check_in: { type: 'string', description: 'Fecha de llegada, formato AAAA-MM-DD' },
       check_out: { type: 'string', description: 'Fecha de salida, formato AAAA-MM-DD (posterior a la llegada)' },
       adultos: { type: 'integer', description: 'Número de adultos. Si el cliente da un total de personas sin edades, cuéntelas todas como adultos.' },
-      ninos: { type: 'integer', description: 'Número de niños (solo si el cliente lo indicó). Por defecto 0.' }
+      ninos: { type: 'integer', description: 'Número de niños (solo si el cliente lo indicó). Por defecto 0.' },
+      dia_semana: { type: 'string', description: 'Opcional. Día de la semana que el cliente mencionó junto a la fecha (ej. "viernes"), tal como lo dijo. Se valida contra el calendario: debe coincidir con la llegada o la salida.' }
     },
     required: ['check_in', 'check_out', 'adultos']
   }
@@ -216,7 +320,13 @@ async function llamarClaude(system, mensajes, ctx) {
     const resultados = [];
     for (const b of contenido.filter(x => x.type === 'tool_use')) {
       let salida;
-      if (b.name === 'consultar_disponibilidad' && feriadoLleno((b.input || {}).check_in, (b.input || {}).check_out)) {
+      const errorDia = (DATE_GUARD && b.name === 'consultar_disponibilidad')
+        ? validarDiaSemana((b.input || {}).dia_semana, (b.input || {}).check_in, (b.input || {}).check_out) : null;
+      if (errorDia) {
+        // El día de la semana no coincide con la fecha: no se consulta al motor; se aclara con el cliente.
+        console.log(`📅 Día/fecha inconsistentes ${JSON.stringify(b.input)} -> se pide aclaración`);
+        salida = { ok: false, error: errorDia };
+      } else if (b.name === 'consultar_disponibilidad' && feriadoLleno((b.input || {}).check_in, (b.input || {}).check_out)) {
         // Fechas completas por el feriado: no se consulta al motor ni se ofrece precio; la respuesta al cliente es fija y cordial.
         console.log(`🚫 Feriado lleno ${JSON.stringify(b.input)} -> se responde que estamos completos`);
         ctx.llenoEsteTurno = true;
@@ -327,6 +437,19 @@ async function asegurarCoherencia(system, mensajes, reply, ctx) {
     nueva = await llamarClaude(system, extra, ctx);
   }
   return nueva || reply;
+}
+
+// DATE_GUARD: si la respuesta trae una combinación día+fecha incorrecta, se regenera una vez con la corrección;
+// si persiste, se sustituye por una pregunta de aclaración.
+async function guardaFechas(system, mensajes, reply, ctx) {
+  if (!DATE_GUARD) return reply;
+  const problemas = revisarDiasFechas(reply);
+  if (!problemas.length) return reply;
+  console.log(`📅 Guarda de fechas: ${problemas.map(p => '"' + p.texto + '"').join(', ')} no coinciden con el calendario — se regenera`);
+  const nueva = await llamarClaude(system + '\n\nCORRECCIÓN INTERNA (el cliente no la ve; no la menciones ni te disculpes por ella): ' + notaCorreccionFechas(problemas), mensajes, ctx);
+  if (nueva && !revisarDiasFechas(nueva).length) return nueva;
+  console.log('📅 Guarda de fechas: persiste la inconsistencia — se envía pregunta de aclaración');
+  return preguntaAclaracion(problemas[0]);
 }
 
 const POLITICA_CANCELACION = `Para que tenga todo claro antes de reservar, esta es nuestra política de cancelación:
@@ -998,7 +1121,8 @@ async function procesarConversacion(key, conversationId, token) {
 async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen, kMsgs, esperaMs) {
   const esNuevoCliente = !!conversaciones[key].saludoPendiente;
   const saludo = obtenerSaludo();
-  const systemBase = SYSTEM_PROMPT + `\n\nFecha de hoy en Honduras: ${fechaHoyHonduras()} (AAAA-MM-DD).`;
+  // Parte estática (SYSTEM_PROMPT) primero y idéntica entre llamadas; lo que cambia cada día va después.
+  const systemBase = SYSTEM_PROMPT + `\n\nFecha de hoy en Honduras: ${fechaHoyHonduras()} (AAAA-MM-DD).` + (DATE_GUARD ? contextoFechas() : '');
   const systemConSaludo = esNuevoCliente
     ? systemBase + `\n\nEl cliente acaba de escribir por primera vez. Salúdalo con "${saludo}" al inicio de tu respuesta.`
     : systemBase;
@@ -1014,6 +1138,8 @@ async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen
     reply = MENSAJE_FERIADO_LLENO; // texto fijo: no depende de lo que redacte el modelo
   } else {
     reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
+    reply = await guardaFechas(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
+    if (conversaciones[key].llenoEsteTurno && !conversaciones[key].consultoEsteTurno) reply = MENSAJE_FERIADO_LLENO;
   }
   // Los canales (WhatsApp/Instagram/Facebook) no muestran bien los asteriscos.
   reply = reply.replace(/\*+/g, '');
@@ -1163,16 +1289,21 @@ app.get('/', (req, res) => {
   res.send('Vera - Finca Las Vírgenes está activa ✅');
 });
 
-const https = require('https');
-setInterval(() => {
-  https.get('https://vera-server-gxdo.onrender.com', (res) => {
-    console.log('🔄 Auto-ping: servidor activo');
-  }).on('error', (err) => {
-    console.log('⚠️ Auto-ping error:', err.message);
-  });
-}, 840000);
+// Solo para pruebas unitarias (require); en producción el archivo se ejecuta directamente con node.
+module.exports = { contextoFechas, revisarDiasFechas, preguntaAclaracion, validarDiaSemana, fechaHoyHonduras, horaHonduras, sumarDias, fechaLarga };
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🌿 Vera corriendo en puerto ${PORT}`);
-});
+if (require.main === module) {
+  const https = require('https');
+  setInterval(() => {
+    https.get('https://vera-server-gxdo.onrender.com', (res) => {
+      console.log('🔄 Auto-ping: servidor activo');
+    }).on('error', (err) => {
+      console.log('⚠️ Auto-ping error:', err.message);
+    });
+  }, 840000);
+
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`🌿 Vera corriendo en puerto ${PORT}`);
+  });
+}
