@@ -749,8 +749,8 @@ Si el total suma 4 o más personas — sin importar cuántos sean niños, bebés
 
 Cabañas para 4 o más personas:
 - 4 personas → Cabañas #3 y #6 (L.4,640/noche) — capacidad ideal
-- 5 personas → Cabañas #3 y #6 (L.4,640/noche) — pueden alojar 5 pero es el máximo; si prefieren más espacio, Cabañas #1 y #2
-- 6-7 personas → Cabañas #1 y #2 directamente
+- 5 personas → Cabañas #3 y #6 (L.4,640/noche) — pueden alojar 5 pero es el máximo absoluto; si prefieren más espacio, Cabañas #1 y #2
+- 6 personas o más → Cabañas #1 y #2 directamente. NUNCA ofrezcas Cabañas #3 ni #6 para 6 o más personas — su capacidad máxima es 5.
 
 Para 4-5 personas:
 - Ofrece primero las Cabañas #3 y #6 — L.4,640/noche
@@ -780,7 +780,7 @@ Cuando el cliente pregunte específicamente por cabañas:
 - Si son 1-2 personas: presenta habitaciones primero, luego cabañas con tarifa pareja
 - Si son 3 personas: presenta directamente Cabañas #3 y #6 a L.3,900, y Cabañas #1 y #2 como opción premium
 - Si son 4-5 personas: presenta Cabañas #3 y #6 a L.4,640, y Cabañas #1 y #2 como opción premium
-- Si son 6-7 personas: presenta directamente Cabañas #1 y #2
+- Si son 6 personas o más: presenta directamente Cabañas #1 y #2. NUNCA menciones Cabañas #3 ni #6 para este número de personas.
 - NUNCA presentes habitaciones junto a cabañas para grupos de 3 o más personas
 
 TARIFAS DE CABAÑAS:
