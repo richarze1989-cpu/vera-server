@@ -11,7 +11,7 @@ const CHATWOOT_API_TOKEN = process.env.CHATWOOT_API_TOKEN;
 const CHATWOOT_INBOX_ID = process.env.CHATWOOT_INBOX_ID;
 const CHATWOOT_URL = process.env.CHATWOOT_URL || 'https://app.chatwoot.com';
 const CHATWOOT_ACCOUNT_ID = '169097';
-const VERIFY_TOKEN = 'vera2024';
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'vera2024'; // configurar VERIFY_TOKEN en Render; el valor por defecto conserva el comportamiento actual
 // Motor de reservas (consulta de disponibilidad, solo lectura)
 const MOTOR_URL = (process.env.MOTOR_URL || '').replace(/\/+$/, '');
 const VERA_API_KEY = process.env.VERA_API_KEY;
@@ -308,6 +308,16 @@ async function consultarDisponibilidad(args) {
   }
 }
 
+// "Cabaña #4 completa" (Hab 401-404, hasta 10 personas): solo tiene sentido para grupos de 6 a 10 personas.
+// Para grupos más pequeños se retira del resultado del motor; el prompt acota aún más cuándo se ofrece (7-10 personas o 3-4 parejas).
+const rxCabana4 = /caba[nñ]a\s*#?\s*4\s*completa/i;
+function quitarCabana4Completa(salida, totalPersonas) {
+  if (!salida || typeof salida !== 'object') return salida;
+  if (totalPersonas >= 6 && totalPersonas <= 10) return salida;
+  if (Array.isArray(salida.opciones)) salida.opciones = salida.opciones.filter(o => !rxCabana4.test(String(o && o.nombre || '')));
+  return salida;
+}
+
 // Grupos grandes (8+ personas): unidades libres y propuestas de combinación.
 async function consultarDisponibilidadGrupo(args) {
   if (!MOTOR_URL || !VERA_API_KEY) {
@@ -347,14 +357,30 @@ function lineaConsulta(c) {
   return `\n\n*Consulta al motor:* ${c.llegada} al ${c.salida} (${c.noches} noche${c.noches === 1 ? '' : 's'}), ${c.adultos} adulto(s), ${c.ninos} niño(s).\n*Libres (precio estándar):* ${libres}`;
 }
 
+// Llamada a Claude con reintentos ante fallas temporales (sin respuesta, 429, 408, 5xx/529). No reintenta si el cliente escribió de nuevo (cancelación).
+async function postClaude(body, ctx) {
+  const opts = { headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, signal: ctx.signal, timeout: 60000 };
+  let intento = 0;
+  for (;;) {
+    try {
+      return await axios.post(ANTHROPIC_URL, body, opts);
+    } catch (e) {
+      if (fueCancelado(e) || (ctx.signal && ctx.signal.aborted)) throw e;
+      const st = e.response && e.response.status;
+      const reintentable = !st || st === 429 || st === 408 || st >= 500;
+      if (!reintentable || intento >= 2) throw e;
+      intento++;
+      const espera = intento === 1 ? 1500 : 4000;
+      console.warn(`⚠️ Claude falló (${st || e.code || e.message}); reintento ${intento}/2 en ${espera} ms`);
+      await sleepMs(espera);
+    }
+  }
+}
+
 async function llamarClaude(system, mensajes, ctx) {
   const msgs = mensajes.map(m => ({ role: m.role, content: m.content }));
   for (let ronda = 0; ronda < 4; ronda++) {
-    const r = await axios.post(
-      ANTHROPIC_URL,
-      { model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system, messages: msgs, tools: HERRAMIENTAS },
-      { headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, signal: ctx.signal }
-    );
+    const r = await postClaude({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, system, messages: msgs, tools: HERRAMIENTAS }, ctx);
     if (ctx.signal && ctx.signal.aborted) throw new Error('cancelada');
     const contenido = r.data.content || [];
     if (r.data.stop_reason !== 'tool_use') {
@@ -377,8 +403,24 @@ async function llamarClaude(system, mensajes, ctx) {
         salida = { ok: false, error: 'Todas las habitaciones y cabañas están ocupadas en esas fechas por el feriado morazánico. Informa con amabilidad que estamos completos para esas fechas, que con gusto lo recibimos en otra fecha, y que con gusto ayudas con precios u otra información. No des precios de esas fechas.' };
       } else if (b.name === 'consultar_disponibilidad') {
         salida = await consultarDisponibilidad(b.input || {});
+        salida = quitarCabana4Completa(salida, (Number.isInteger((b.input || {}).adultos) ? b.input.adultos : 2) + (Number.isInteger((b.input || {}).ninos) ? b.input.ninos : 0));
         console.log(`🔎 Disponibilidad ${JSON.stringify(b.input)} -> ${salida.ok ? (salida.opciones || []).length + ' opciones' : 'error: ' + salida.error}`);
         if (salida.ok) ctx.ultimaConsulta = salida;
+        // Grupos de 6 o 7 personas sin ninguna unidad individual libre: se busca una combinación antes de decir que no hay.
+        const inpI = b.input || {};
+        const totalI = (Number.isInteger(inpI.adultos) ? inpI.adultos : 2) + (Number.isInteger(inpI.ninos) ? inpI.ninos : 0);
+        if (salida.ok && (salida.opciones || []).length === 0 && totalI >= 6 && totalI <= 7) {
+          const g = await consultarDisponibilidadGrupo(inpI);
+          console.log(`🔎 Disponibilidad grupo (respaldo, ${totalI} personas) ${JSON.stringify(inpI)} -> ${g.ok ? (g.propuestas || []).length + ' propuestas' : 'error: ' + g.error}`);
+          if (g.ok && g.hay_propuesta) {
+            ctx.ultimaConsulta = {
+              ok: true, llegada: g.check_in, salida: g.check_out, noches: g.noches,
+              adultos: Number.isInteger(inpI.adultos) ? inpI.adultos : 2, ninos: Number.isInteger(inpI.ninos) ? inpI.ninos : 0,
+              opciones: [], grupo: g
+            };
+            salida = Object.assign({}, salida, { alternativa_combinada: g });
+          }
+        }
         ctx.consultoEsteTurno = true;
       } else if (b.name === 'consultar_disponibilidad_grupo') {
         const inp = b.input || {};
@@ -705,6 +747,17 @@ Para estas preguntas, Vera responde de inmediato usando el número de personas q
 
 Solo después de dar la información completa, Vera puede preguntar si desean conocer disponibilidad para fechas específicas — nunca antes.
 
+ORDEN DE LOS MENSAJES Y CUÁNDO ENVIAR EL ENLACE (REGLA PRIORITARIA):
+Hay dos situaciones distintas:
+
+A) El cliente solo consulta precios, opciones o disponibilidad (todavía no dice que quiere reservar). Responde en 2 partes con ---SPLIT---:
+Parte 1: lo que preguntó (opciones y precios).
+Parte 2: lo que incluye la tarifa, la frase de cierre sobre la administradora y UNA sola pregunta final, por ejemplo "¿Cuál de estas opciones le interesa?".
+En esta respuesta NO incluyas el enlace de la administradora (wa.me/50495812311), ni el aviso de demora o de llamadas, ni la política de cancelación, ni el proceso de reserva: se entregan cuando el cliente muestre intención de reservar.
+
+B) El cliente muestra INTENCIÓN DE RESERVA: dice que quiere reservar o apartar, elige una opción concreta, pregunta cómo reservar, pagar o depositar, pide el enlace, el contacto o hablar con una persona. Entonces sigue el FLUJO PARA RESERVAS y el TRASPASO. El orden que recibe el cliente es: resumen de lo elegido, lo que incluye la tarifa (solo si no se dijo antes), cómo funciona la reserva, política de cancelación, y al final el traspaso con el enlace y una sola pregunta. El sistema añade "Así funciona su reserva" y la política en su lugar: no los dupliques.
+Excepción: si la herramienta de disponibilidad no está disponible por un error, usa el traspaso con el enlace aunque el cliente solo haya consultado.
+
 TRASPASO A LA ADMINISTRADORA — REGLA UNIFICADA:
 Cuando el cliente desee reservar, confirmar disponibilidad, pagar o hablar con una persona, envía el contacto de la administradora con tono formal, cálido y elegante. Trata al cliente de "usted".
 
@@ -736,8 +789,9 @@ Reglas al usar el resultado:
 - Informa SOLO lo que devuelve la herramienta. Nunca digas que hay o no hay espacio sin haberla consultado, ni inventes disponibilidad.
 - Presenta únicamente las unidades que aparecen en opciones. Si una unidad que normalmente recomendarías no aparece, no la menciones. Aplica las reglas de recomendación por número de personas (habitaciones solo para parejas, etc.) sobre las unidades disponibles. Las listas de cabañas y precios de este prompt son solo informativas: NUNCA ofrezcas con precio una unidad que no aparezca en opciones, aunque figure en esas listas.
 - El precio y el total de la herramienta son el precio ESTÁNDAR vigente. Si difieren de las tarifas escritas en este prompt, prevalece la herramienta. Indica siempre el total de la estadía y el número de noches, por ejemplo: "2 noches, total L.6,000".
-- Si requiere_cotizacion es true (paquetes como Cabaña #4 completa o Habitación #5 + Cabaña #6), preséntalo como tarifa referencial que la administradora confirmará. No lo des como precio final.
-- Si opciones viene vacío, di con delicadeza que para esas fechas no vemos disponibilidad en el sistema y ofrece revisar fechas cercanas (puedes volver a consultar con otras fechas). Si el cliente prefiere, ofrece el contacto de la administradora.
+- Si requiere_cotizacion es true (paquetes como Habitación #5 + Cabaña #6 o Cabaña #4 completa), preséntalo como tarifa referencial que la administradora confirmará. No lo des como precio final.
+- Si opciones viene vacío pero trae alternativa_combinada (grupo de 6 o 7 personas sin una unidad individual libre): NO digas que no hay disponibilidad. Presenta la primera propuesta de alternativa_combinada.propuestas como una opción en varias unidades (nombres con su capacidad y la tarifa referencial por noche del conjunto, referencia_noche_maxima; sin total de la estadía), aclarando con naturalidad que son unidades separadas dentro de la finca, y deja que el cliente decida si le conviene: algunas familias prefieren estar bajo un mismo techo y otras no tienen inconveniente. Después, un solo siguiente paso o pregunta. Mismas reglas de GRUPOS GRANDES: una propuesta principal y, como máximo, una alternativa; nunca digas "precio especial"; la administradora confirma y puede ofrecer un mejor precio.
+- Si opciones viene vacío y NO trae alternativa_combinada, di con delicadeza que para esas fechas no vemos disponibilidad en el sistema y ofrece revisar fechas cercanas (puedes volver a consultar con otras fechas). Si el cliente prefiere, ofrece el contacto de la administradora.
 - Si la herramienta devuelve un error de fechas o de datos, corrige con el cliente de forma amable. Si devuelve que la consulta no está disponible, usa el mensaje de traspaso a la administradora sin afirmar nada sobre disponibilidad.
 - Aun cuando haya disponibilidad, no la garantices: aclara que la reserva queda confirmada cuando la administradora la confirma.
 - CIERRE OBLIGATORIO en toda respuesta con disponibilidad o precios: una frase cálida que indique que cualquier duda, detalle o solicitud especial (precio especial, descuento por varias noches, cargo adicional, mascotas, decoración, horarios) se la aclara y aprueba nuestra administradora personalmente antes de confirmar la reserva. Ejemplo: "Cualquier duda o detalle adicional, nuestra administradora se lo aclarará con gusto antes de confirmar su reserva. 🌿" No la repitas idéntica en mensajes consecutivos.
@@ -851,9 +905,9 @@ REGLA MATEMÁTICA ABSOLUTA — SUMA TOTAL DE PERSONAS:
 Antes de ofrecer cualquier alojamiento, suma TODOS los integrantes del grupo: adultos + niños + bebés. El resultado determina la opción:
 
 - Total = 1 o 2 → Habitaciones (primero) + Cabañas con tarifa pareja
-- Total = 3 (2 adultos + 1 niño) → Habitación con sofácama O Cabañas #3/#6 a L.3,900
-- Total = 3 (3 adultos) → SOLO Cabañas #3 y #6 a L.3,900
-- Total = 4 o más → SOLO CABAÑAS, SIN EXCEPCIÓN. Nunca habitaciones.
+- Total = 3 (2 adultos + 1 niño) → Habitación con sofácama O Cabañas #3/#6 a L.4,640
+- Total = 3 (3 adultos) → SOLO Cabañas #3 y #6 a L.4,640
+- Total = 4 o más → SOLO CABAÑAS, SIN EXCEPCIÓN. Nunca habitaciones sueltas (la única excepción es la opción de exclusividad "Cabaña #4 completa", con su propia regla más abajo).
 
 Si el total suma 4 o más personas — sin importar cuántos sean niños, bebés o adultos, sin importar si piden "habitación", sin importar las edades — la respuesta es siempre cabañas:
 "Nuestras habitaciones están diseñadas para parejas — para [número] personas nuestras cabañas alpinas son la opción perfecta, con mucho más espacio y comodidad para toda la familia. 🌿"
@@ -893,7 +947,7 @@ Esta regla reemplaza a las reglas anteriores de combinaciones y de grupos de 8 o
 
 Cuando el cliente pregunte específicamente por cabañas:
 - Si son 1-2 personas: presenta habitaciones primero, luego cabañas con tarifa pareja
-- Si son 3 personas: presenta directamente Cabañas #3 y #6 a L.3,900, y Cabañas #1 y #2 como opción premium
+- Si son 3 personas: presenta directamente Cabañas #3 y #6 a L.4,640, y Cabañas #1 y #2 como opción premium
 - Si son 4-5 personas: presenta Cabañas #3 y #6 a L.4,640, y Cabañas #1 y #2 como opción premium
 - Si son 6 personas o más: presenta directamente Cabañas #1 y #2. NUNCA menciones Cabañas #3 ni #6 para este número de personas.
 - NUNCA presentes habitaciones junto a cabañas para grupos de 3 o más personas
@@ -903,10 +957,7 @@ Tarifa pareja (1-2 personas):
 - Cabaña #3 o #6: L.3,800/noche
 - Cabaña #1 o #2: L.4,000/noche
 
-Tarifa 3 personas:
-- Cabaña #3 o #6: L.3,900/noche (tarifa especial para exactamente 3 personas)
-
-Tarifa familiar (4-5 personas):
+Tarifa familiar (3 a 5 personas):
 - Cabaña #3 o #6: L.4,640/noche | ideal 4 personas, máx 5
 - Habitación #5 y Cabaña #6 juntas: L.6,500 ambas | comparten pared, se rentan como una sola unidad combinada | ideal grupos que buscan privacidad
 - Cabaña #1: L.6,240/noche | 2 habitaciones + deck en porche + terraza con gran vista en segundo nivel | máx 6 personas
@@ -920,12 +971,19 @@ ALOJAMIENTOS — HABITACIONES (diseñadas para parejas):
 - Hab 401 Junior Suite: nuestra Junior Suite — cama queen + sofácama unipersonal + sala + porche + mininevera | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,500/noche | para parejas (sofácama para 1 niño adicional)
 
 ALOJAMIENTOS — CABAÑAS:
-- Cabaña #3: cama queen + litera + sofácama + escritorio + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,900/noche (3 personas) — L.4,640/noche (4-5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
-- Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.3,900/noche (3 personas) — L.4,640/noche (4-5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
+- Cabaña #3: cama queen + litera + sofácama + escritorio + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche (3 a 5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
+- Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche (3 a 5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
 - Cabaña #1: 2 camas queen + litera + sofácama + 2 habitaciones + deck en porche + terraza con gran vista en segundo nivel | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,240/noche | máx 6 personas | precio L.6,240 cubre hasta 6 personas — sin cargo extra posible
 - Cabaña #2: habitación privada con cama queen + ático con 2 camas matrimoniales + sofácama + sala + terraza + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,500/noche | máx 7 personas | precio L.6,500 cubre hasta 6 personas — 7ma persona paga extra según edad
 
-NOTA: Las habitaciones 401, 402, 403 y 404 forman parte de la Cabaña #4 completa, que puede reservarse en su totalidad por L.12,000/noche — ideal para grupos o familias que deseen exclusividad total.
+CABAÑA #4 COMPLETA — OPCIÓN DE EXCLUSIVIDAD (REGLA ESTRICTA):
+Son las 4 habitaciones (401 Junior Suite, 402 y 403 Deluxe King, 404 Deluxe Queen Superior) reservadas juntas para un solo grupo, hasta 10 personas, con tarifa referencial de L.12,000/noche que confirma la administradora. Es un paquete para grupos, no una habitación ni una cabaña común.
+- SOLO ofrécela si el grupo es de 7 a 10 personas, o de 3 a 4 parejas o amigos que viajan juntos (cada pareja necesita su habitación), y SOLO si aparece en la herramienta como disponible (requiere_cotizacion = true).
+- NUNCA la ofrezcas a parejas, a familias de 6 personas o menos, ni en consultas pequeñas, aunque aparezca en el resultado.
+- Preséntala SIEMPRE en un párrafo aparte, después de las demás opciones, como "opción de exclusividad", nunca mezclada en la lista de precios. Modelo: "Si desean exclusividad total, también contamos con la Cabaña #4 completa: las 4 habitaciones (Junior Suite, 2 Deluxe King y Deluxe Queen Superior) solo para su grupo, hasta 10 personas. Tarifa referencial L.12,000 por noche, que nuestra administradora confirmará."
+- Si el cliente pregunta por exclusividad total o por rentar las habitaciones 401 a 404 y no aparece en la herramienta, no la ofrezcas con precio: explica que lo cotiza la administradora y pásalo a ella.
+- Si es un grupo de 8 o más personas, aplica lo mismo dentro de la regla de GRUPOS GRANDES (una sola alternativa, sin recargar el mensaje).
+Las habitaciones 401, 402, 403 y 404 también se ofrecen de forma individual a parejas.
 
 TODOS LOS ALOJAMIENTOS INCLUYEN: aire acondicionado, agua caliente, WiFi, Smart TV, desayuno, acceso a piscina, jardines, restaurante y pesca deportiva, fogata nocturna y té de manzanilla-tilo-canela.
 
@@ -1152,7 +1210,7 @@ LARGO Y DIVISIÓN:
 Si una respuesta supera unos 600 caracteres, divídela en 2 mensajes usando el marcador ---SPLIT---. Nunca más de 2 partes.
 Cada parte debe ser una idea completa:
 Parte 1: la respuesta a lo que el cliente preguntó (opciones, precios, características).
-Parte 2: lo que incluye la tarifa, el siguiente paso (reserva o traspaso) y la pregunta final.
+Parte 2: lo que incluye la tarifa, la frase de cierre y la pregunta final (el enlace de la administradora solo si el cliente ya mostró intención de reservar; ver ORDEN DE LOS MENSAJES).
 Si la respuesta cabe en menos de 600 caracteres, envíala en un solo mensaje.
 
 ESTRUCTURA DE OPCIONES (alojamientos, precios):
@@ -1173,7 +1231,7 @@ No inventes características, precios ni políticas: usa solo la información of
 Mantén un tono cálido y elegante, nunca seco ni robótico. La calidez se nota en las palabras, no en exceso de emojis ni frases exageradas.
 
 CUANDO HAYA TRASPASO A LA ADMINISTRADORA:
-Aplica el bloque "TRASPASO A LA ADMINISTRADORA": aviso de posible demora y opción de llamar al mismo número ANTES del enlace, una sola vez por conversación.
+Solo cuando el cliente muestre intención de reservar (ver ORDEN DE LOS MENSAJES), aplica el bloque "TRASPASO A LA ADMINISTRADORA": aviso de posible demora y opción de llamar al mismo número ANTES del enlace, una sola vez por conversación.
 
 EJEMPLO DE RESPUESTA (pareja, fechas específicas):
 Mensaje 1:
@@ -1195,10 +1253,9 @@ Cabaña #1 o #2 — L.4,000/noche. Opción premium con más espacio."
 Mensaje 2:
 "Todas incluyen aire acondicionado, agua caliente, WiFi, Smart TV, desayuno, acceso a piscina, jardines, restaurante y fogata nocturna.
 
-Para confirmar disponibilidad, escríbale a nuestra administradora. Por la alta demanda de mensajes, la respuesta podría tardar un poco; también puede llamar a este mismo número, +504 9581-2311, o al +504 9948-8659.
-https://wa.me/50495812311
+Cualquier duda o detalle adicional, nuestra administradora se lo aclarará con gusto antes de confirmar su reserva. 🌿
 
-¿Le gustaría ver fotos de alguna opción?"
+¿Cuál de estas opciones le interesa?"
 
 Responde siempre en español. Si el cliente pregunta algo que no puedes resolver, indícale que lo comunicarás con el equipo de la finca.`;
 
@@ -1255,6 +1312,47 @@ function unirTurnos(mensajes) {
   return out;
 }
 
+// Mensaje de respaldo cuando Vera no puede responder por una falla técnica (aprobado por Ricardo).
+const RESPALDO_FALLA = 'Gracias por escribirnos 🌿 En este momento estamos con alta demanda. Nuestra administradora, Karen, le atenderá personalmente: +504 9581-2311. https://wa.me/50495812311';
+const ultimoRespaldo = {}; // key -> última vez que se envió el respaldo (evita repetirlo)
+
+async function enviarAlertaFalla(conversationId, e) {
+  const st = e && e.response && e.response.status;
+  const detalle = String((e && e.response && e.response.data && e.response.data.error && e.response.data.error.message) || (e && e.message) || 'desconocido').slice(0, 160);
+  const pista = (st === 401 || st === 403) ? ' Posible problema con la clave de la API.' : (/credit|balance|billing/i.test(detalle) ? ' Posible saldo agotado en la cuenta de Anthropic.' : '');
+  const mensaje = `⚠️ VERA NO PUDO RESPONDER\n\nLa conversación ${conversationId} de Chatwoot quedó sin respuesta automática por una falla técnica. Se envió al cliente un mensaje de respaldo con el contacto de la administradora. Por favor revísela.\n\nMotivo: ${st ? 'HTTP ' + st + ' — ' : ''}${detalle}.${pista}`;
+  for (const numero of NUMEROS_ALERTA) {
+    try {
+      await axios.post(
+        `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+        { messaging_product: 'whatsapp', to: numero, type: 'text', text: { body: mensaje } },
+        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+      );
+      console.log(`✅ Alerta de falla enviada a ${numero}`);
+    } catch (err) {
+      console.error(`❌ Error alerta de falla a ${numero}:`, err.response?.data || err.message);
+    }
+  }
+}
+
+async function respaldoPorFalla(key, conversationId, vigente, e) {
+  try {
+    console.error(`🆘 Falla al responder conv ${conversationId}:`, (e.response && e.response.data) || e.message);
+    const c = conversaciones[key];
+    if (!vigente()) return;                       // llegó un mensaje más nuevo: esa respuesta se encargará
+    if (c && c.envioIniciado) return;             // ya se envió parte de la respuesta: no se duplica
+    const ahora = Date.now();
+    if (ultimoRespaldo[key] && ahora - ultimoRespaldo[key] < 10 * 60 * 1000) return; // máximo uno cada 10 minutos por conversación
+    ultimoRespaldo[key] = ahora;
+    await responderEnChatwoot(conversationId, RESPALDO_FALLA);
+    if (c) c.mensajes.push({ role: 'assistant', content: RESPALDO_FALLA });
+    console.log(`🆘 Respaldo enviado en conv ${conversationId}`);
+    await enviarAlertaFalla(conversationId, e);
+  } catch (err) {
+    console.error('❌ No se pudo enviar el respaldo:', err.response?.data || err.message);
+  }
+}
+
 async function procesarConversacion(key, conversationId, token) {
   if (pendientes[key] !== token) return;
   const rf = BURST_V2 ? (rafagas[key] = rafagas[key] || { msgs: 0, firstAt: 0, gen: 0, ctrl: null }) : null;
@@ -1282,10 +1380,20 @@ async function procesarConversacion(key, conversationId, token) {
       console.log(`ráfaga conv ${conversationId}: ${rf.msgs} mensajes, espera ${esperaMs} ms, generación #${gen}, descartada (llegó un mensaje nuevo)`);
       return;
     }
+    await respaldoPorFalla(key, conversationId, vigente, e);
     throw e;
   } finally {
     if (rf && rf.ctrl === ctrl) { rf.ctrl = null; conversaciones[key].signal = undefined; }
   }
+}
+
+// Dentro de la parte que contiene el traspaso, separa lo que va ANTES del aviso/enlace (p. ej. "lo que incluye la tarifa")
+// para que "Así funciona su reserva" y la política queden entre ambos y el traspaso sea lo último que lee el cliente.
+function separarPrevioAlTraspaso(parte) {
+  const parrafos = String(parte).split(/\n{2,}/);
+  const k = parrafos.findIndex(p => /alta demanda|wa\.me\/50495812311|^\s*será un placer|escr[ií]bale a nuestra administradora|escribir a nuestra administradora/i.test(p));
+  if (k <= 0) return null;
+  return { previo: parrafos.slice(0, k).join('\n\n'), traspaso: parrafos.slice(k).join('\n\n') };
 }
 
 async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen, kMsgs, esperaMs) {
@@ -1302,6 +1410,7 @@ async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen
 
   conversaciones[key].consultoEsteTurno = false;
   conversaciones[key].llenoEsteTurno = false;
+  conversaciones[key].envioIniciado = false;
   const systemFinal = systemConSaludo + estadoConsulta(conversaciones[key].ultimaConsulta);
   let reply = await llamarClaude(systemFinal, mensajesParaClaude, conversaciones[key]);
   if (conversaciones[key].llenoEsteTurno && !conversaciones[key].consultoEsteTurno) {
@@ -1354,7 +1463,12 @@ async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen
   const insertar = [];
   if (idxTraspaso >= 0 && !yaProceso) insertar.push(PROCESO_RESERVA);
   if (idxTraspaso >= 0 && !yaPolitica) insertar.push(POLITICA_CANCELACION);
-  if (insertar.length) partes.splice(idxTraspaso, 0, ...insertar);
+  if (insertar.length) {
+    // Orden: respuesta → lo que incluye → cómo funciona la reserva → política → enlace y pregunta final.
+    const sep = separarPrevioAlTraspaso(partes[idxTraspaso]);
+    if (sep) partes.splice(idxTraspaso, 1, sep.previo, ...insertar, sep.traspaso);
+    else partes.splice(idxTraspaso, 0, ...insertar);
+  }
 
   if (!BURST_V2) {
     for (const parte of partes) {
@@ -1375,12 +1489,14 @@ async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen
         return;
       }
       await responderEnChatwoot(conversationId, partes[i]);
+      conversaciones[key].envioIniciado = true;
       // Se inserta justo después de los mensajes del cliente que contestó (no al final, por si llegaron otros mientras tanto).
       const hist = conversaciones[key].mensajes;
       hist.splice(Math.min(conversaciones[key].posHistorial++, hist.length), 0, { role: 'assistant', content: partes[i] });
       enviadas++;
     } else {
       await responderEnChatwoot(conversationId, partes[i]);
+      conversaciones[key].envioIniciado = true;
     }
   }
   if (rf) {
