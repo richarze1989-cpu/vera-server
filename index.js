@@ -460,6 +460,59 @@ function minimaOmitida(reply, c) {
   return /disponib|L\.\s?\d/i.test(reply);
 }
 
+// UNIT_GUARD=on|off. La respuesta no puede ofrecer con precio una unidad que el motor no devolvió como libre en la consulta de este turno.
+const UNIT_GUARD = String(process.env.UNIT_GUARD || 'on').toLowerCase() !== 'off';
+
+function clavesDeUnidades(texto) {
+  const claves = new Set();
+  const t = sinAcentos(String(texto));
+  for (const m of t.matchAll(/cabanas?\s*#?\s*(\d(?:\s*(?:,|y|o|e|\/)\s*#?\d)*)/g)) {
+    for (const n of m[1].match(/\d/g)) claves.add('cab' + n);
+  }
+  if (/\bhab(?:itacion)?\s*#\s*5\b/.test(t)) claves.add('hab5');
+  for (const m of t.matchAll(/\bhab(?:itaciones|itacion)?\s*#?\s*(40[1-4](?:\s*(?:,|y|o|e|\/)\s*#?40[1-4])*)/g)) {
+    for (const n of m[1].match(/40[1-4]/g)) claves.add('hab' + n);
+  }
+  return claves;
+}
+
+function nombresLibresDeConsulta(c) {
+  if (!c || !c.ok) return [];
+  if (c.grupo) return (c.grupo.unidades_libres || []).map(u => u.nombre);
+  return (c.opciones || []).map(o => o.nombre);
+}
+
+function unidadesOfrecidasNoLibres(reply, c) {
+  if (!UNIT_GUARD || !c || !c.ok) return [];
+  const permitidas = new Set();
+  for (const n of nombresLibresDeConsulta(c)) clavesDeUnidades(n).forEach(k => permitidas.add(k));
+  if (c.grupo) {
+    for (const p of (c.grupo.propuestas || [])) for (const q of (p.paquetes_incluidos || [])) clavesDeUnidades(q).forEach(k => permitidas.add(k));
+    if (['hab401', 'hab402', 'hab403', 'hab404'].every(k => permitidas.has(k))) permitidas.add('cab4');
+  }
+  const malas = [];
+  for (const linea of String(reply).split('\n')) {
+    if (!/L\.\s?\d/.test(linea)) continue;
+    const previo = linea.split(/L\.\s?\d/)[0]; // solo el nombre de la unidad, no su descripción
+    for (const k of clavesDeUnidades(previo)) if (!permitidas.has(k)) malas.push({ clave: k, linea });
+  }
+  return malas;
+}
+
+async function guardaUnidades(system, mensajes, reply, ctx) {
+  if (!UNIT_GUARD || !ctx.consultoEsteTurno) return reply;
+  const malas = unidadesOfrecidasNoLibres(reply, ctx.ultimaConsulta);
+  if (!malas.length) return reply;
+  const libres = nombresLibresDeConsulta(ctx.ultimaConsulta).join('; ') || 'ninguna';
+  console.log(`🛡️ Guarda de unidades: la respuesta ofrece ${[...new Set(malas.map(m => m.clave))].join(', ')}, que no están libres según el motor — se regenera`);
+  const nueva = await llamarClaude(system + '\n\nCORRECCIÓN INTERNA (el cliente no la ve; no la menciones ni te disculpes por ella): tu respuesta anterior ofrece con precio unidades que el motor NO devolvió como disponibles para esas fechas. Ofrece ÚNICAMENTE las unidades del último resultado de la herramienta (' + libres + ') y no menciones ninguna otra con precio. Aunque este prompt liste otras cabañas, solo cuentan las que devolvió la herramienta.', mensajes, ctx);
+  const base = nueva || reply;
+  const restantes = unidadesOfrecidasNoLibres(base, ctx.ultimaConsulta);
+  if (!restantes.length) return base;
+  console.log('🛡️ Guarda de unidades: persiste — se eliminan las líneas con unidades no disponibles');
+  const quitar = new Set(restantes.map(m => m.linea));
+  return base.split('\n').filter(l => !quitar.has(l)).join('\n');
+}
 // Segunda ronda forzada: obliga a consultar de nuevo antes de enviar.
 async function asegurarCoherencia(system, mensajes, reply, ctx) {
   const sinVerificar = afirmaDisponibilidadSinVerificar(reply, ctx.ultimaConsulta);
@@ -681,7 +734,7 @@ Cuando el cliente ya dio fecha de llegada, fecha de salida y número de personas
 
 Reglas al usar el resultado:
 - Informa SOLO lo que devuelve la herramienta. Nunca digas que hay o no hay espacio sin haberla consultado, ni inventes disponibilidad.
-- Presenta únicamente las unidades que aparecen en opciones. Si una unidad que normalmente recomendarías no aparece, no la menciones. Aplica las reglas de recomendación por número de personas (habitaciones solo para parejas, etc.) sobre las unidades disponibles.
+- Presenta únicamente las unidades que aparecen en opciones. Si una unidad que normalmente recomendarías no aparece, no la menciones. Aplica las reglas de recomendación por número de personas (habitaciones solo para parejas, etc.) sobre las unidades disponibles. Las listas de cabañas y precios de este prompt son solo informativas: NUNCA ofrezcas con precio una unidad que no aparezca en opciones, aunque figure en esas listas.
 - El precio y el total de la herramienta son el precio ESTÁNDAR vigente. Si difieren de las tarifas escritas en este prompt, prevalece la herramienta. Indica siempre el total de la estadía y el número de noches, por ejemplo: "2 noches, total L.6,000".
 - Si requiere_cotizacion es true (paquetes como Cabaña #4 completa o Habitación #5 + Cabaña #6), preséntalo como tarifa referencial que la administradora confirmará. No lo des como precio final.
 - Si opciones viene vacío, di con delicadeza que para esas fechas no vemos disponibilidad en el sistema y ofrece revisar fechas cercanas (puedes volver a consultar con otras fechas). Si el cliente prefiere, ofrece el contacto de la administradora.
@@ -832,11 +885,11 @@ PROHIBIDO:
 GRUPOS GRANDES — REGLA PRIORITARIA (8 o más personas en total, contando adultos y niños):
 Esta regla reemplaza a las reglas anteriores de combinaciones y de grupos de 8 o más personas. La administradora registra estas reservas y puede reservar varias cabañas y habitaciones a nombre de una sola persona. Por eso, cuando el grupo no cabe en una sola unidad, SÍ puedes proponer varias unidades juntas (por ejemplo dos o tres cabañas, o cabañas y una habitación), siempre y cuando salgan del resultado de la herramienta.
 1. Con la fecha de llegada, la de salida y el total de personas, usa ÚNICAMENTE consultar_disponibilidad_grupo (no uses consultar_disponibilidad para estos grupos). Si no sabes cómo se compone el grupo (familias, parejas, amigos), pregúntalo una sola vez.
-2. Si hay_propuesta es true: confirma que hay disponibilidad y presenta la primera propuesta de la lista propuestas (una segunda solo si ayuda) con los nombres de las unidades y la capacidad de cada una. Indica la tarifa referencial por noche del conjunto con referencia_noche_maxima, sin dar un total de la estadía. Aclara que son varias unidades reservadas juntas a nombre de una sola persona y que, al ser un grupo grande, nuestra administradora puede ofrecerle un mejor precio y confirma la reserva. Si paquetes_incluidos trae un paquete, preséntalo como tarifa referencial.
-3. Si hay_capacidad es true pero hay_propuesta es false (grupo muy grande): dile que sí contamos con espacio en esas fechas y que la administradora coordinará la distribución; usa el traspaso. No inventes unidades.
-4. Si hay_capacidad es false: dilo con claridad, ofrece revisar fechas cercanas (puedes volver a consultar) o hablar con la administradora. Nunca uses un mensaje fijo de ocupado.
-5. No inventes unidades, precios, descuentos ni porcentajes fuera del resultado. No calcules el depósito para estos grupos: lo indica la administradora.
-6. Después sigue el flujo normal de reserva (resumen, política de cancelación y traspaso a la administradora).
+2. Si hay_propuesta es true: confirma con naturalidad que hay disponibilidad y presenta UNA propuesta principal (la primera de la lista propuestas) y, solo si ayuda, UNA alternativa (la segunda). Nunca más de dos. Cada propuesta en una línea: nombres de las unidades con su capacidad y la tarifa referencial por noche del conjunto (referencia_noche_maxima), sin dar un total de la estadía. Si paquetes_incluidos trae un paquete, preséntalo como tarifa referencial. Aclara que son varias unidades reservadas juntas a nombre de una sola persona y que, al ser un grupo grande, nuestra administradora puede ofrecerle un mejor precio y confirma la reserva. Usa ---SPLIT--- para que el mensaje no quede largo: parte 1 las propuestas; parte 2 la aclaración del mejor precio y la pregunta final. Termina preguntando cuál propuesta le interesa. En esta primera respuesta NO incluyas el enlace ni el traspaso a la administradora: se envían cuando el cliente elija una propuesta o pida reservar.
+3. Si hay_capacidad es true pero hay_propuesta es false (grupo muy grande): responde en dos partes con ---SPLIT---. Parte 1: sí contamos con espacio en esas fechas y la administradora coordinará la distribución. Parte 2: el traspaso a la administradora con su enlace. No inventes unidades.
+4. Si hay_capacidad es false: dilo con claridad, ofrece revisar fechas cercanas (consulta de nuevo la herramienta antes de sugerirlas) o hablar con la administradora. Nunca uses un mensaje fijo de ocupado.
+5. No inventes unidades, precios, descuentos ni porcentajes fuera del resultado. Nunca digas "precio especial": di que la administradora puede ofrecerle un mejor precio o que lo evaluará. No calcules el depósito para estos grupos: lo indica la administradora.
+6. Cuando el cliente elija una propuesta o quiera reservar, sigue el flujo normal de reserva (resumen, política de cancelación y traspaso a la administradora).
 
 Cuando el cliente pregunte específicamente por cabañas:
 - Si son 1-2 personas: presenta habitaciones primero, luego cabañas con tarifa pareja
@@ -1256,12 +1309,14 @@ async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen
   } else {
     reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
     reply = await guardaFechas(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
+    reply = await guardaUnidades(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
     if (conversaciones[key].llenoEsteTurno && !conversaciones[key].consultoEsteTurno) reply = MENSAJE_FERIADO_LLENO;
   }
   // Los canales (WhatsApp/Instagram/Facebook) no muestran bien los asteriscos.
   reply = reply.replace(/\*+/g, '');
   reply = aUsted(reply);
-  if (conversaciones[key].consultoEsteTurno && !/administradora/i.test(reply)) {
+  const sinCapacidadGrupo = !!(conversaciones[key].ultimaConsulta && conversaciones[key].ultimaConsulta.grupo && conversaciones[key].ultimaConsulta.grupo.hay_capacidad === false);
+  if (conversaciones[key].consultoEsteTurno && !sinCapacidadGrupo && !/administradora/i.test(reply)) {
     // Si el mensaje termina en una pregunta, el cierre va ANTES de ella (la pregunta debe ser lo último que lea el cliente).
     const base = reply.trimEnd();
     const idxUltimo = base.lastIndexOf('\n\n');
