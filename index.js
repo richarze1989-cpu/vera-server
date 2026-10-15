@@ -268,6 +268,20 @@ const HERRAMIENTAS = [{
     },
     required: ['check_in', 'check_out', 'adultos']
   }
+}, {
+  name: 'consultar_disponibilidad_grupo',
+  description: 'Consulta la disponibilidad para GRUPOS GRANDES (8 o más personas en total, sumando adultos y niños). Revisa qué unidades están libres durante toda la estadía y propone combinaciones de varias cabañas y habitaciones. Devuelve solo información; no reserva nada. No la uses para grupos de menos de 8 personas.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      check_in: { type: 'string', description: 'Fecha de llegada, formato AAAA-MM-DD' },
+      check_out: { type: 'string', description: 'Fecha de salida, formato AAAA-MM-DD (posterior a la llegada)' },
+      adultos: { type: 'integer', description: 'Número de adultos. Si el cliente da un total de personas sin edades, cuéntelas todas como adultos.' },
+      ninos: { type: 'integer', description: 'Número de niños (solo si el cliente lo indicó). Por defecto 0.' },
+      dia_semana: { type: 'string', description: 'Opcional. Día de la semana que el cliente mencionó junto a la fecha (ej. "viernes"), tal como lo dijo.' }
+    },
+    required: ['check_in', 'check_out', 'adultos']
+  }
 }];
 
 async function consultarDisponibilidad(args) {
@@ -294,9 +308,39 @@ async function consultarDisponibilidad(args) {
   }
 }
 
+// Grupos grandes (8+ personas): unidades libres y propuestas de combinación.
+async function consultarDisponibilidadGrupo(args) {
+  if (!MOTOR_URL || !VERA_API_KEY) {
+    return { ok: false, error: 'Consulta no disponible por el momento.' };
+  }
+  try {
+    const r = await axios.get(`${MOTOR_URL}/api/bot/disponibilidad/grupo`, {
+      params: {
+        check_in: args.check_in,
+        check_out: args.check_out,
+        adults: Number.isInteger(args.adultos) ? args.adultos : 8,
+        children: Number.isInteger(args.ninos) ? args.ninos : 0
+      },
+      headers: { 'x-api-key': VERA_API_KEY },
+      timeout: 10000
+    });
+    return r.data;
+  } catch (err) {
+    const d = err.response?.data;
+    console.error('❌ Error consultando motor (grupo):', err.response?.status, d || err.message);
+    if (err.response?.status === 400 && d?.error) return { ok: false, error: d.error };
+    return { ok: false, error: 'Consulta no disponible por el momento.' };
+  }
+}
+
 // Resumen de la última consulta al motor, para las alertas a la administradora.
 function lineaConsulta(c) {
   if (!c || !c.ok) return '';
+  if (c.grupo) {
+    const g = c.grupo;
+    const p1 = (g.propuestas && g.propuestas[0]) ? g.propuestas[0].unidades.map(u => u.nombre).join(' + ') : 'sin propuesta automática';
+    return `\n\n*Consulta de grupo al motor:* ${c.llegada} al ${c.salida} (${c.noches} noche${c.noches === 1 ? '' : 's'}), ${g.huespedes} persona(s).\n*Capacidad libre:* ${g.capacidad_libre_total}. *Primera propuesta:* ${p1}.`;
+  }
   const libres = (c.opciones || [])
     .map(o => `${o.nombre} ${L(o.total)}${o.requiere_cotizacion ? ' (paquete, cotizar)' : ''}`)
     .join('; ') || 'ninguna';
@@ -320,7 +364,7 @@ async function llamarClaude(system, mensajes, ctx) {
     const resultados = [];
     for (const b of contenido.filter(x => x.type === 'tool_use')) {
       let salida;
-      const errorDia = (DATE_GUARD && b.name === 'consultar_disponibilidad')
+      const errorDia = (DATE_GUARD && (b.name === 'consultar_disponibilidad' || b.name === 'consultar_disponibilidad_grupo'))
         ? validarDiaSemana((b.input || {}).dia_semana, (b.input || {}).check_in, (b.input || {}).check_out) : null;
       if (errorDia) {
         // El día de la semana no coincide con la fecha: no se consulta al motor; se aclara con el cliente.
@@ -335,6 +379,18 @@ async function llamarClaude(system, mensajes, ctx) {
         salida = await consultarDisponibilidad(b.input || {});
         console.log(`🔎 Disponibilidad ${JSON.stringify(b.input)} -> ${salida.ok ? (salida.opciones || []).length + ' opciones' : 'error: ' + salida.error}`);
         if (salida.ok) ctx.ultimaConsulta = salida;
+        ctx.consultoEsteTurno = true;
+      } else if (b.name === 'consultar_disponibilidad_grupo') {
+        const inp = b.input || {};
+        salida = await consultarDisponibilidadGrupo(inp);
+        console.log(`🔎 Disponibilidad grupo ${JSON.stringify(inp)} -> ${salida.ok ? (salida.propuestas || []).length + ' propuestas' : 'error: ' + salida.error}`);
+        if (salida.ok) {
+          ctx.ultimaConsulta = {
+            ok: true, llegada: salida.check_in, salida: salida.check_out, noches: salida.noches,
+            adultos: Number.isInteger(inp.adultos) ? inp.adultos : 8, ninos: Number.isInteger(inp.ninos) ? inp.ninos : 0,
+            opciones: [], grupo: salida
+          };
+        }
         ctx.consultoEsteTurno = true;
       } else {
         salida = { ok: false, error: 'Herramienta desconocida.' };
@@ -773,10 +829,14 @@ PROHIBIDO:
 - No asumas que dos unidades se pueden combinar solo porque tienen specs o precios similares.
 - Si un grupo no cabe en una sola unidad y no aplica la combinación Habitación #5 + Cabaña #6, presenta las cabañas disponibles como unidades INDEPENDIENTES (cada una con su propia tarifa y reserva por separado), nunca como un paquete combinado con un solo precio total, salvo que sea Habitación #5 + Cabaña #6.
 
-PARA GRUPOS DE 8 O MÁS PERSONAS:
-- Si la combinación Habitación #5 + Cabaña #6 cubre la capacidad necesaria, ofrécela primero.
-- Si el grupo excede esa capacidad o prefiere otra distribución, ofrece las Cabañas #1 y #2 como dos unidades independientes (cada una con su tarifa por separado), aclarando que son dos reservas distintas, no una combinación con precio único.
-- Nunca inventes un precio "total combinado" para unidades que no están designadas oficialmente como combinables.
+GRUPOS GRANDES — REGLA PRIORITARIA (8 o más personas en total, contando adultos y niños):
+Esta regla reemplaza a las reglas anteriores de combinaciones y de grupos de 8 o más personas. La administradora registra estas reservas y puede reservar varias cabañas y habitaciones a nombre de una sola persona. Por eso, cuando el grupo no cabe en una sola unidad, SÍ puedes proponer varias unidades juntas (por ejemplo dos o tres cabañas, o cabañas y una habitación), siempre y cuando salgan del resultado de la herramienta.
+1. Con la fecha de llegada, la de salida y el total de personas, usa ÚNICAMENTE consultar_disponibilidad_grupo (no uses consultar_disponibilidad para estos grupos). Si no sabes cómo se compone el grupo (familias, parejas, amigos), pregúntalo una sola vez.
+2. Si hay_propuesta es true: confirma que hay disponibilidad y presenta la primera propuesta de la lista propuestas (una segunda solo si ayuda) con los nombres de las unidades y la capacidad de cada una. Indica la tarifa referencial por noche del conjunto con referencia_noche_maxima, sin dar un total de la estadía. Aclara que son varias unidades reservadas juntas a nombre de una sola persona y que, al ser un grupo grande, nuestra administradora puede ofrecerle un mejor precio y confirma la reserva. Si paquetes_incluidos trae un paquete, preséntalo como tarifa referencial.
+3. Si hay_capacidad es true pero hay_propuesta es false (grupo muy grande): dile que sí contamos con espacio en esas fechas y que la administradora coordinará la distribución; usa el traspaso. No inventes unidades.
+4. Si hay_capacidad es false: dilo con claridad, ofrece revisar fechas cercanas (puedes volver a consultar) o hablar con la administradora. Nunca uses un mensaje fijo de ocupado.
+5. No inventes unidades, precios, descuentos ni porcentajes fuera del resultado. No calcules el depósito para estos grupos: lo indica la administradora.
+6. Después sigue el flujo normal de reserva (resumen, política de cancelación y traspaso a la administradora).
 
 Cuando el cliente pregunte específicamente por cabañas:
 - Si son 1-2 personas: presenta habitaciones primero, luego cabañas con tarifa pareja
