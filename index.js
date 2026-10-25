@@ -967,7 +967,7 @@ Tarifa pareja (1-2 personas):
 Tarifa familiar (3 a 5 personas):
 - Cabaña #3 o #6: L.4,640/noche | ideal 4 personas, máx 5
 - Habitación #5 y Cabaña #6 juntas: L.6,500 ambas | comparten pared, se rentan como una sola unidad combinada | ideal grupos que buscan privacidad
-- Cabaña #1: L.6,240/noche | 2 habitaciones + deck en porche + terraza con gran vista en segundo nivel | máx 6 personas
+- Cabaña #1: L.6,240/noche | habitación privada con cama queen en primer nivel + ático familiar abierto en segundo nivel con 1 cama matrimonial y 1 litera + deck en porche + terraza privada elevada con vista | máx 6 personas
 - Cabaña #2: L.6,500/noche | habitación privada + ático con 2 camas matrimoniales + sofácama | máx 7 personas
 
 ALOJAMIENTOS — HABITACIONES (diseñadas para parejas):
@@ -980,7 +980,7 @@ ALOJAMIENTOS — HABITACIONES (diseñadas para parejas):
 ALOJAMIENTOS — CABAÑAS:
 - Cabaña #3: cama queen + litera + sofácama + escritorio + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche (3 a 5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
 - Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche (3 a 5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
-- Cabaña #1: 2 camas queen + litera + sofácama + 2 habitaciones + deck en porche + terraza con gran vista en segundo nivel | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,240/noche | máx 6 personas | precio L.6,240 cubre hasta 6 personas — sin cargo extra posible
+- Cabaña #1: habitación privada con cama queen en primer nivel + ático familiar abierto en segundo nivel con 1 cama matrimonial y 1 litera + deck en porche + terraza privada elevada con vista (acceso desde el ático) | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,240/noche | máx 6 personas | precio L.6,240 cubre hasta 6 personas — sin cargo extra posible
 - Cabaña #2: habitación privada con cama queen + ático con 2 camas matrimoniales + sofácama + sala + terraza + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,500/noche | máx 7 personas | precio L.6,500 cubre hasta 6 personas — 7ma persona paga extra según edad
 
 CABAÑA #4 COMPLETA — OPCIÓN DE EXCLUSIVIDAD (REGLA ESTRICTA):
