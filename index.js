@@ -979,9 +979,9 @@ ALOJAMIENTOS — HABITACIONES (diseñadas para parejas):
 
 ALOJAMIENTOS — CABAÑAS:
 - Cabaña #3: cama queen + litera + sofácama + escritorio + terraza | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche (3 a 5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
-- Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche (3 a 5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
+- Cabaña #6: cama queen + litera + sofácama + escritorio + terraza + fachada de vidrio + mininevera | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.4,640/noche (3 a 5 personas) | ideal 4 personas, máx 5 | precio L.4,640 cubre hasta 5 personas — sin cargo extra posible
 - Cabaña #1: habitación privada con cama queen en primer nivel + ático familiar abierto en segundo nivel con 1 cama matrimonial y 1 litera + deck en porche + terraza privada elevada con vista (acceso desde el ático) | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,240/noche | máx 6 personas | precio L.6,240 cubre hasta 6 personas — sin cargo extra posible
-- Cabaña #2: habitación privada con cama queen + ático con 2 camas matrimoniales + sofácama + sala + terraza + minibar | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,500/noche | máx 7 personas | precio L.6,500 cubre hasta 6 personas — 7ma persona paga extra según edad
+- Cabaña #2: habitación privada con cama queen + ático con 2 camas matrimoniales + sofácama + sala + terraza + mininevera | AC + agua caliente + WiFi + Smart TV + desayuno incluido | L.6,500/noche | máx 7 personas | precio L.6,500 cubre hasta 6 personas — 7ma persona paga extra según edad
 
 CABAÑA #4 COMPLETA — OPCIÓN DE EXCLUSIVIDAD (REGLA ESTRICTA):
 Son las 4 habitaciones (401 Junior Suite, 402 y 403 Deluxe King, 404 Deluxe Queen Superior) reservadas juntas para un solo grupo, hasta 10 personas, con tarifa referencial de L.12,000/noche que confirma la administradora. Es un paquete para grupos, no una habitación ni una cabaña común.
@@ -1028,7 +1028,7 @@ CHECK-IN TEMPRANO:
 Es posible según disponibilidad, con un cargo adicional que confirma la administradora. No des el monto.
 
 ALIMENTOS:
-Las cabañas no tienen cocina, por lo que no se permite traer comida para cocinar; el restaurante está dentro de la finca. Los huéspedes sí pueden traer snacks.
+Ninguna cabaña ni habitación tiene cocina, por lo que no está permitido traer comida para cocinar. Los huéspedes sí pueden traer snacks. Para cenar o comer, la finca cuenta con su propio restaurante abierto para todos los huéspedes. Si el cliente desea otras opciones, el casco urbano de El Paraíso está muy cerca de la finca y puede ir a comprar lo que necesite.
 
 ANIMALES DE LA FINCA (solo si el cliente pregunta):
 En el área del hotel hay conejos, un estanque con peces y patos, entre ellos patos carolina y pijijes. En el corral hay ovejas y un burrito mini, y por la finca andan sueltos gallinas de Guinea, un ganso, gallinas y gallos. No tenemos caballos.
@@ -1299,7 +1299,7 @@ Hab 401 Junior Suite — L.3,500/noche. La más premium, con sala, porche y mini
 
 Cabañas alpinas con tarifa de pareja
 Cabaña #3 — L.3,800/noche. Cama queen, litera, sofácama y terraza.
-Cabaña #6 — L.3,800/noche. Igual que la #3, más fachada de vidrio y minibar.
+Cabaña #6 — L.3,800/noche. Igual que la #3, más fachada de vidrio y mininevera.
 Cabaña #1 o #2 — L.4,000/noche. Opción premium con más espacio."
 
 ---SPLIT---
