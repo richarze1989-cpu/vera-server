@@ -555,6 +555,74 @@ async function guardaUnidades(system, mensajes, reply, ctx) {
   const quitar = new Set(restantes.map(m => m.linea));
   return base.split('\n').filter(l => !quitar.has(l)).join('\n');
 }
+
+// HAB_GUARD=on|off. Las Hab 402 y 403 (cama king, sin sofácama) admiten como máximo 2 adultos, más un bebé menor de 3 años sin cargo.
+// Si la conversación indica un niño de 3 años o más (o un menor sin edad clara) o 3 o más adultos, la respuesta no puede ofrecerlas con precio.
+const HAB_GUARD = String(process.env.HAB_GUARD || 'on').toLowerCase() !== 'off';
+
+function textoDelCliente(mensajes) {
+  return (mensajes || []).filter(m => m && m.role === 'user' && typeof m.content === 'string').map(m => m.content).join('\n');
+}
+
+// Devuelve { bloquear: bool, motivo: string }.
+function perfilBloqueaHab402403(mensajes, c) {
+  const t = sinAcentos(textoDelCliente(mensajes)).toLowerCase();
+  const palabraMenor = /\b(nin[oa]s?|hij[oa]s?|menor(?:es)?|pequen[oa]s?|chiquit[oa]s?|cipot[ea]s?|adolescentes?|jovencit[oa]s?|bebes?|criaturas?|chamac[oa]s?)\b/.test(t);
+  const adolescente = /\badolescentes?\b/.test(t);
+  const edades = [...t.matchAll(/\b(\d{1,2})\s*anos?\b/g)].map(m => parseInt(m[1], 10));
+  const edadMenorMayorA3 = edades.some(e => e >= 3 && e <= 17);
+  const evidenciaBebe = /\bbebes?\b|\brecien nacid|\b\d{1,2}\s*mes(?:es)?\b|\b[0-2]\s*anos?\b/.test(t);
+  const ninosMotor = c && c.ok && Number.isInteger(c.ninos) ? c.ninos : 0;
+  const adultosMotor = c && c.ok && Number.isInteger(c.adultos) ? c.adultos : 0;
+  if (adultosMotor >= 3) return { bloquear: true, motivo: adultosMotor + ' adultos' };
+  if (adolescente || (edadMenorMayorA3 && (palabraMenor || ninosMotor > 0))) return { bloquear: true, motivo: 'niño/menor de 3 años o más' };
+  if ((palabraMenor || ninosMotor > 0) && !evidenciaBebe) return { bloquear: true, motivo: 'menor sin edad que lo descarte' };
+  return { bloquear: false, motivo: '' };
+}
+
+const rxHab402403 = /\b40[23]\b/;
+const rxPrecioL = /L\.?\s?\d/;
+const rxInicioUnidad = /^\s*(?:[-•▪️🛏️🏡]\s*)?(?:\*{0,2})(?:hab(?:itaci[oó]n|itaciones)?|caba[nñ]a|paquete)\b/i;
+
+// Quita de la respuesta los bloques de Hab 402/403 con precio (la línea del nombre y sus líneas de descripción hasta el siguiente bloque).
+function quitarHab402403ConPrecio(reply) {
+  const partes = String(reply).split('---SPLIT---');
+  const limpias = partes.map(parte => {
+    const lineas = parte.split('\n');
+    const salida = [];
+    let saltando = false;
+    for (let i = 0; i < lineas.length; i++) {
+      const l = lineas[i];
+      const vacia = l.trim() === '';
+      if (rxHab402403.test(l) && rxPrecioL.test(l) && rxInicioUnidad.test(l)) { saltando = true; continue; }
+      if (saltando) {
+        if (vacia || rxInicioUnidad.test(l) || /^\s*(?:habitaciones|caba[nñ]as alpinas)\b/i.test(l)) saltando = false;
+        else continue;
+      }
+      salida.push(l);
+    }
+    return salida.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }).filter(p => p.length > 0);
+  return limpias.join('\n---SPLIT---\n');
+}
+
+function ofreceHab402403ConPrecio(reply) {
+  return String(reply).split('\n').some(l => rxHab402403.test(l) && rxPrecioL.test(l) && rxInicioUnidad.test(l));
+}
+
+async function guardaHab402403(system, mensajes, reply, ctx) {
+  if (!HAB_GUARD || !ofreceHab402403ConPrecio(reply)) return reply;
+  const perfil = perfilBloqueaHab402403(mensajes, ctx.ultimaConsulta);
+  if (!perfil.bloquear) return reply;
+  console.log(`🛡️ Guarda Hab 402/403: la respuesta las ofrece con precio y el perfil no lo permite (${perfil.motivo}) — se regenera`);
+  const nueva = await llamarClaude(system + '\n\nCORRECCIÓN INTERNA (el cliente no la ve; no la menciones ni te disculpes por ella): las habitaciones 402 y 403 Deluxe King tienen cama king y NO tienen sofácama; admiten como máximo 2 adultos (más un bebé menor de 3 años sin cargo). Según lo que el cliente indicó (' + perfil.motivo + ') NO son opción: no las ofrezcas, no las menciones con precio y no digas que se les puede agregar sofácama. Ofrece únicamente las habitaciones con sofácama (Hab #5, 401 o 404) o las cabañas que correspondan, con los precios que apliquen.', mensajes, ctx);
+  const base = nueva || reply;
+  if (!ofreceHab402403ConPrecio(base)) return base;
+  console.log('🛡️ Guarda Hab 402/403: persiste — se eliminan las líneas de 402/403 con precio');
+  const limpia = quitarHab402403ConPrecio(base);
+  return limpia || base;
+}
+
 // Segunda ronda forzada: obliga a consultar de nuevo antes de enviar.
 async function asegurarCoherencia(system, mensajes, reply, ctx) {
   const sinVerificar = afirmaDisponibilidadSinVerificar(reply, ctx.ultimaConsulta);
@@ -1473,6 +1541,7 @@ async function generarYEnviar(key, conversationId, token, rf, ctrl, vigente, gen
     reply = await asegurarCoherencia(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
     reply = await guardaFechas(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
     reply = await guardaUnidades(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
+    reply = await guardaHab402403(systemFinal, mensajesParaClaude, reply, conversaciones[key]);
     if (conversaciones[key].llenoEsteTurno && !conversaciones[key].consultoEsteTurno) reply = MENSAJE_FERIADO_LLENO;
   }
   // Los canales (WhatsApp/Instagram/Facebook) no muestran bien los asteriscos.
