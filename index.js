@@ -451,7 +451,7 @@ const MES_NUM = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6, julio:7
 function lineaDepositos(c) {
   const ops = (c.opciones || []).filter(o => o.total !== null && o.total !== undefined);
   if (!ops.length) return '';
-  return ' Depósito del 50% por opción (usa estos montos, no los calcules): ' + ops.map(o => `${o.nombre} L.${Math.round(Number(o.total) / 2).toLocaleString('en-US')} (total L.${Number(o.total).toLocaleString('en-US')})`).join('; ') + '.';
+  return ' Monto total por opción (pago del 100% para confirmar la reserva): ' + ops.map(o => `${o.nombre} L.${Number(o.total).toLocaleString('en-US')}`).join('; ') + '.';
 }
 
 function estadoConsulta(c) {
@@ -679,9 +679,9 @@ Menos de 3 días o no-show — sin reembolso. Si desea reagendar, aplica un carg
 
 En caso de fuerza mayor, cada situación se evalúa de forma individual. 🌿`;
 
-const CIERRE_ADMINISTRADORA = 'Para reservar se solicita un depósito del 50% del total de la estadía. Cualquier duda o detalle adicional, nuestra administradora se lo aclarará con gusto antes de confirmar su reserva. 🌿';
+const CIERRE_ADMINISTRADORA = 'Para confirmar su reserva se requiere el pago completo del total de la estadía. Cualquier duda o detalle adicional, nuestra administradora se lo aclarará con gusto antes de confirmar su reserva. 🌿';
 
-const PROCESO_RESERVA = `Así funciona su reserva: con un depósito del 50% del total de la estadía se realiza su reserva. Para realizarlo, escriba a nuestra administradora, Karen, al +504 9581-2311: ella le compartirá los datos y confirmará su reserva al recibir el depósito. 🌿`;
+const PROCESO_RESERVA = `Así funciona su reserva: para confirmarla se requiere el pago completo del total de la estadía. Para realizarlo, escriba a nuestra administradora, Karen, al +504 9581-2311: ella le compartirá los datos bancarios y confirmará su reserva al recibir el pago. 🌿`;
 
 // Garantiza el trato de "usted" aunque el modelo se deslice al "tú".
 function aUsted(t) {
@@ -848,7 +848,7 @@ REGLAS DE TRASPASO:
 - NO afirmes que una fecha queda reservada o disponible hasta que la administradora lo confirme.
 - Envía este mensaje UNA sola vez por conversación. Si el cliente vuelve a pedirlo, ofrece solo el enlace y el número en una línea.
 - Si el cliente dice que no le responden, reconoce la espera con cortesía, reitera que puede llamar a ese mismo número y no inventes causas.
-- REGLA CLAVE: la administradora (Karen) NO contacta a los clientes por iniciativa propia. Es el CLIENTE quien debe escribirle al +504 9581-2311 (https://wa.me/50495812311) para que ella le comparta los datos del depósito y confirme la reserva. NUNCA digas ni insinúes "nuestra administradora se comunicará con usted", "le escribirá", "le contactará", "se pondrá en contacto", "su información está lista para que ella la atienda" ni "quédese tranquilo/a, le contactarán". Al despedirte de un cliente que quiere reservar, recuérdale con amabilidad que, para asegurar su reserva, debe escribir a ese número para realizar el depósito del 50%.
+- REGLA CLAVE: la administradora (Karen) NO contacta a los clientes por iniciativa propia. Es el CLIENTE quien debe escribirle al +504 9581-2311 (https://wa.me/50495812311) para que ella le comparta los datos bancarios y confirme la reserva al recibir el pago completo. NUNCA digas ni insinúes "nuestra administradora se comunicará con usted", "le escribirá", "le contactará", "se pondrá en contacto", "su información está lista para que ella la atienda" ni "quédese tranquilo/a, le contactarán". Al despedirte de un cliente que quiere reservar, recuérdale con amabilidad que, para asegurar su reserva, debe escribir a ese número para realizar el pago del 100% del total de la estadía.
 
 Ejemplo de mensaje de traspaso:
 "Será un placer atenderle 🌿 Para confirmar su reserva mediante el depósito, le invitamos a escribir a nuestra administradora, Karen. Por la alta demanda de mensajes, es posible que la respuesta tarde un poco; si lo prefiere, también puede llamar a este mismo número, +504 9581-2311, o al +504 9948-8659.
@@ -886,7 +886,7 @@ FLUJO PARA RESERVAS:
 La administradora SIEMPRE confirma las reservas, porque hay detalles que deben aclararse antes. Vera nunca confirma una reserva.
 Cuando el cliente indique que quiere reservar o confirmar, asegúrate de tener: fechas, número de personas y alojamiento de interés (el nombre es opcional, pídelo una sola vez de forma casual). Si aún no consultaste disponibilidad para esas fechas, hazlo primero con la herramienta. Si el cliente aún no ha visto precios u opciones, muéstraselos primero.
 Una vez que tengas los datos, responde SIEMPRE en 2 partes con ---SPLIT--- (la política de cancelación es OBLIGATORIA; NO la omitas ni la pospongas para después del traspaso):
-Parte 1: resumen breve (alojamiento, fechas, número de personas, total estándar de la estadía y el monto del depósito del 50%), la aclaración de que la reserva se confirma con la administradora, y la política de cancelación completa:
+Parte 1: resumen breve (alojamiento, fechas, número de personas y total completo de la estadía), la aclaración de que la reserva se confirma con la administradora mediante el pago del 100%, y la política de cancelación completa:
 "Para que tenga todo claro antes de reservar, esta es nuestra política de cancelación:
 
 Con más de 7 días de anticipación — puede reagendar sin costo o recibir un reembolso del 80%.
@@ -898,11 +898,11 @@ Parte 2: el mensaje de traspaso a la administradora (con el orden obligatorio in
 Solo si el cliente NO ha dicho su nombre en la conversación, pídelo al final de la parte 2 en una sola línea; si ya lo dijo, no lo pidas. Esta secuencia (resumen, política y traspaso) se envía una sola vez por conversación.
 Si el cliente ya recibió la política y el traspaso en esta conversación, no los repitas; solo ofrece el enlace y el número en una línea.
 
-PROCESO DE RESERVA (explícalo siempre que el cliente quiera reservar o pregunte cómo se reserva, cómo se paga o cuánto debe depositar):
-Con un depósito del 50% del total de la estadía se realiza la reserva. El cliente debe escribir a la administradora (Karen, +504 9581-2311) para que ella le comparta los datos del depósito y confirme la reserva cuando lo recibe; ella no escribe primero. Nunca inventes datos bancarios, números de cuenta ni plazos: esos datos los da únicamente la administradora. Si el cliente prefiere pagar el 100%, indícale que también es posible y que la administradora lo coordina. Cuando tengas el monto del depósito en el ESTADO DE CONSULTAS, indícalo (por ejemplo: "el depósito del 50% sería de L.3,000").
+PROCESO DE RESERVA (explícalo siempre que el cliente quiera reservar o pregunte cómo se reserva, cómo se paga o cuánto debe transferir):
+Para confirmar la reserva se requiere el pago del 100% del total de la estadía. El cliente debe escribir a la administradora (Karen, +504 9581-2311) para que ella le comparta los datos bancarios y confirme la reserva al recibir el pago; ella no escribe primero. Nunca inventes datos bancarios, números de cuenta ni plazos: esos datos los da únicamente la administradora. Cuando tengas el total en el ESTADO DE CONSULTAS, indícalo (por ejemplo: "el total de la estadía es L.3,000").
 
-FLUJO PARA DEPÓSITO O PAGO:
-Cuando el cliente indique que está listo para pagar o depositar, explica brevemente el proceso (depósito del 50%; el cliente escribe a la administradora, quien comparte los datos y confirma al recibirlo) y usa el mensaje de traspaso indicado arriba.
+FLUJO PARA PAGO:
+Cuando el cliente indique que está listo para pagar, explica brevemente el proceso (pago del 100%; el cliente escribe a la administradora, quien comparte los datos bancarios y confirma al recibirlo) y usa el mensaje de traspaso indicado arriba.
 
 HORARIO DE ATENCIÓN A VISITANTES — REGLA OBLIGATORIA:
 La finca atiende a visitantes (restaurante, pasadía, visitas de día) en este horario:
@@ -1090,7 +1090,7 @@ PESCA DEPORTIVA:
 Está incluida en todas las estadías, junto con el desayuno, la piscina y la fogata nocturna. Menciónala al describir lo que incluye la tarifa.
 
 PAGOS:
-La reserva se confirma con una transferencia del 50%. El saldo puede pagarse en la finca con tarjeta de crédito. Por ahora no tenemos link de pago.
+La reserva se confirma con el pago del 100% del total de la estadía mediante transferencia bancaria. Por ahora no tenemos link de pago.
 
 CHECK-IN TEMPRANO:
 Es posible según disponibilidad, con un cargo adicional que confirma la administradora. No des el monto.
@@ -1108,7 +1108,7 @@ DATOS PRÁCTICOS:
 Se emite factura con RTN. La finca no ofrece transporte. Las tardes y noches son frescas; recomiende traer un suéter.
 
 POLÍTICA DE RESERVAS:
-- Se requiere 50% o 100% de anticipo para confirmar
+- Se requiere el 100% del total de la estadía para confirmar la reserva
 - Check-in: 3:00 PM | Check-out: 11:00 AM
 - Cancelación +7 días: reagendar gratis o reembolso 80%
 - Cancelación 3-7 días: un reagendamiento gratis o reembolso 50%
